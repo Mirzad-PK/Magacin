@@ -148,7 +148,6 @@ def admin():
                 reader = PdfReader(pdf_path)
                 conn = get_alati_db_connection()
                 cursor = conn.cursor()
-                # Očistimo staru tabelu prije uvoza nove
                 cursor.execute('DELETE FROM ALATI')
                 
                 for page in reader.pages:
@@ -158,7 +157,6 @@ def admin():
                         for line in lines:
                             parts = line.split()
                             if len(parts) >= 3:
-                                # Pretpostavka formata u PDF-u: Sifra, Naziv, Kolicina, Status, Ladica
                                 sifra = parts[0]
                                 kolicina = parts[-3] if len(parts) >= 5 else "1"
                                 status = parts[-2] if len(parts) >= 5 else "Dostupno"
@@ -233,39 +231,39 @@ HTML_HEAD = '''
 </head>
 '''
 
-HTML_LOGIN = f'<!doctype html><html>{HTML_HEAD}<body><div class="box"><h2>🔑 Prijava</h2>{{% if poruka %}}<div class="err">{{{{ poruka }}}}</div>{{% endif %}}<form method="POST"><input type="text" name="username" placeholder="Korisničko ime" required><input type="password" name="password" placeholder="Lozinka" required><button type="submit">Prijavi se</button></form><p style="text-align:center; font-size:14px; margin-top:15px;"><a href="/register" style="color:#007aff; text-decoration:none;">Registracija</a></p></div></body></html>'
+HTML_LOGIN = '<doctype html><html>' + HTML_HEAD + '<body><div class="box"><h2>🔑 Prijava</h2>{% if poruka %}<div class="err">{{ poruka }}</div>{% endif %}<form method="POST"><input type="text" name="username" placeholder="Korisničko ime" required><input type="password" name="password" placeholder="Lozinka" required><button type="submit">Prijavi se</button></form><p style="text-align:center; font-size:14px; margin-top:15px;"><a href="/register" style="color:#007aff; text-decoration:none;">Registracija</a></p></div></body></html>'
 
-HTML_REGISTER = f'<!doctype html><html>{HTML_HEAD}<body><div class="box"><h2>📝 Registracija</h2>{{% if poruka %}}<div class="err">{{{{ poruka }}}}</div>{{% endif %}}{{% if uspjeh %}}<div class="ok">{{{{ uspjeh }}}}</div>{{% endif %}}<form method="POST"><input type="text" name="username" placeholder="Korisničko ime" required><input type="password" name="password" placeholder="Lozinka" required><button type="submit" style="background:#34c759;">Registruj se</button></form><p style="text-align:center; font-size:14px; margin-top:15px;"><a href="/login" style="color:#007aff; text-decoration:none;">Nazad na prijavu</a></p></div></body></html>'
+HTML_REGISTER = '<doctype html><html>' + HTML_HEAD + '<body><div class="box"><h2>📝 Registracija</h2>{% if poruka %}<div class="err">{{ poruka }}</div>{% endif %}{% if uspjeh %}<div class="ok">{{ uspjeh }}</div>{% endif %}<form method="POST"><input type="text" name="username" placeholder="Korisničko ime" required><input type="password" name="password" placeholder="Lozinka" required><button type="submit" style="background:#34c759;">Registruj se</button></form><p style="text-align:center; font-size:14px; margin-top:15px;"><a href="/login" style="color:#007aff; text-decoration:none;">Nazad na prijavu</a></p></div></body></html>'
 
-HTML_INDEX = f'''<!doctype html><html>{HTML_HEAD}<body>
+HTML_INDEX = '<doctype html><html>' + HTML_HEAD + '''<body>
 <div class="top">
-    <span>👤 <strong>{{{{ username }}}}</strong></span>
+    <span>👤 <strong>{{ username }}</strong></span>
     <div>
-        {{% if is_admin == 1 %}}<a href="/admin" class="btn-nav" style="background:#fff9c4; color:#f57f17;">Admin Panel</a>{{% endif %}}
+        {% if is_admin == 1 %}<a href="/admin" class="btn-nav" style="background:#fff9c4; color:#f57f17;">Admin Panel</a>{% endif %}
         <a href="/logout" class="btn-nav">Odjava</a>
     </div>
 </div>
 
 <h2>🔧 Stanje Alata</h2>
-{{% if greska %}}<div class="err">{{{{ greska }}}}</div>{{% endif %}}
+{% if greska %}<div class="err">{{ greska }}</div>{% endif %}
 
-<form method="GET"><input type="text" name="pretraga" style="width:100%; padding:12px; font-size:16px; border:1px solid #c7c7cc; border-radius:8px; box-sizing:border-box; margin-bottom:15px;" placeholder="Pretraži po nazivu ili šifri..." value="{{{{ pretraga }}}}"></form>
+<form method="GET"><input type="text" name="pretraga" style="width:100%; padding:12px; font-size:16px; border:1px solid #c7c7cc; border-radius:8px; box-sizing:border-box; margin-bottom:15px;" placeholder="Pretraži po nazivu ili šifri..." value="{{ pretraga }}"></form>
 
-{{% for alat in alati %}}
+{% for alat in alati %}
 <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <h3 style="margin:0 0 8px 0; color:#000;">{{{{ alat[1] }}}}</h3>
-        <span class="badge-ladica">🗄️ Ladica: {{{{ alat[4] }}}}</span>
+        <h3 style="margin:0 0 8px 0; color:#000;">{{ alat[1] }}</h3>
+        <span class="badge-ladica">🗄️ Ladica: {{ alat[4] }}</span>
     </div>
-    <p style="margin:4px 0; color:#8e8e93; font-size:13px;">Šifra: <code>{{{{ alat[0] }}}}</code></p>
-    <p style="margin:4px 0; color:#8e8e93;">Količina: <strong style="color:#000;">{{{{ alat[2] }}}}</strong> | Status: <span class="badge">{{{{ alat[3] }}}}</span></p>
+    <p style="margin:4px 0; color:#8e8e93; font-size:13px;">Šifra: <code>{{ alat[0] }}</code></p>
+    <p style="margin:4px 0; color:#8e8e93;">Količina: <strong style="color:#000;">{{ alat[2] }}</strong> | Status: <span class="badge">{{ alat[3] }}</span></p>
 </div>
-{{% else %}}
+{% else %}
 <p style="text-align:center; color:#8e8e93;">Nema pronađenih alata.</p>
-{{% endfor %})
+{% endfor %}
 </body></html>'''
 
-HTML_ADMIN = '''<!doctype html><html>''' + HTML_HEAD + '''<body>
+HTML_ADMIN = '<doctype html><html>' + HTML_HEAD + '''<body>
 <a href="/" style="color:#007aff; text-decoration:none; display:inline-block; margin-bottom:15px;">← Nazad na magacin</a>
 <h2>🛠️ Admin Panel</h2>
 
