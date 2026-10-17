@@ -43,7 +43,6 @@ def init_user_db():
     conn.commit()
     conn.close()
 
-# Odmah pokrećemo kreiranje baze pri učitavanju aplikacije da spriječimo grešku
 init_user_db()
 
 @app.route('/')
@@ -245,7 +244,7 @@ HTML_ADMIN = f'''<!doctype html><html>{HTML_HEAD}<body>
     </div>
     <div>
         {{{{% if u[2] == 0 %}}}}
-        <a href="/admin/odobri{{{{ u[0] }}}}" class="btn-nav" style="background:#34c759; color:white;">Odobri</a>
+        <a href="/admin/odobri/{{{{ u[0] }}}}" class="btn-nav" style="background:#34c759; color:white;">Odobri</a>
         {{{{% else %}}}}
         <a href="/admin/blokiraj/{{{{ u[0] }}}}" class="btn-nav" style="background:#ff3b30; color:white;">Blokiraj</a>
         {{{{% endif %}}}}
