@@ -224,8 +224,8 @@ HTML_HEAD = '''
         body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 15px; background: #f2f2f7; color: #1c1c1e; }
         .box { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: 350px; margin: 40px auto; }
         h2 { text-align: center; margin-bottom: 20px; }
-        input[type="text"], input[type="password"], input[type="file"] { width: 100%; padding: 12px; margin: 8px 0; border: 1px solid #c7c7cc; border-radius: 8px; box-sizing: border-box; font-size: 16px; }
-        button, input[type="submit"] { width: 100%; padding: 12px; background: #007aff; color: white; border: none; border-radius: 8px; font-weight: 600; font-size: 16px; cursor: pointer; margin-top: 10px; }
+        input[type="text"], input[type="password"], input[type="file"] { width: 100%; padding: 10px; margin: 4px 0 8px 0; border: 1px solid #c7c7cc; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
+        button, input[type="submit"] { width: 100%; padding: 10px; background: #007aff; color: white; border: none; border-radius: 8px; font-weight: 600; font-size: 15px; cursor: pointer; margin-top: 5px; }
         .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .btn-nav { font-size: 13px; padding: 6px 12px; background: #e5e5ea; text-decoration: none; color: #007aff; border-radius: 6px; font-weight: 500; }
         .card { background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
@@ -233,7 +233,9 @@ HTML_HEAD = '''
         .badge-ladica { background: #ff9f0a; color: white; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
         .err { background: #ffe5e5; color: #ff3b30; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
         .ok { background: #e5ffe5; color: #34c759; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
-        .search-container { background: white; padding: 15px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .search-container { background: white; padding: 12px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
+        .search-row { display: flex; gap: 8px; }
+        .search-col { flex: 1; }
     </style>
 </head>
 '''
@@ -256,13 +258,17 @@ HTML_INDEX = '<doctype html><html>' + HTML_HEAD + '''<body>
 
 <div class="search-container">
     <form method="GET">
-        <label style="font-size:13px; color:#8e8e93; font-weight:600;">Pretraga po šifri:</label>
-        <input type="text" name="sifra" placeholder="Unesi šifru alata..." value="{{ sifra_pretraga }}">
-        
-        <label style="font-size:13px; color:#8e8e93; font-weight:600; margin-top:8px; display:block;">Pretraga po nazivu:</label>
-        <input type="text" name="naziv" placeholder="Unesi naziv alata..." value="{{ naziv_pretraga }}">
-        
-        <button type="submit">Pretraži</button>
+        <div class="search-row">
+            <div class="search-col">
+                <label style="font-size:11px; color:#8e8e93; font-weight:600;">Šifra:</label>
+                <input type="text" name="sifra" placeholder="Šifra..." value="{{ sifra_pretraga }}">
+            </div>
+            <div class="search-col">
+                <label style="font-size:11px; color:#8e8e93; font-weight:600;">Naziv:</label>
+                <input type="text" name="naziv" placeholder="Naziv..." value="{{ naziv_pretraga }}">
+            </div>
+        </div>
+        <button type="submit" style="margin-top:6px;">Pretraži</button>
     </form>
 </div>
 
