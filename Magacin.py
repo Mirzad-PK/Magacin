@@ -220,11 +220,11 @@ HTML_INDEX = f'''<!doctype html><html>{HTML_HEAD}<body>
 {{% endfor %}}
 </body></html>'''
 
-HTML_ADMIN = f'''<!doctype html><html>{HTML_HEAD}<body>
+HTML_ADMIN = '''<!doctype html><html>''' + HTML_HEAD + '''<body>
 <a href="/" style="color:#007aff; text-decoration:none; display:inline-block; margin-bottom:15px;">← Nazad na magacin</a>
 <h2>🛠️ Admin Panel</h2>
 
-{{% if poruka %}}<div class="ok">{{{{ poruka }}}}</div>{{% endif %}}
+{% if poruka %}<div class="ok">{{ poruka }}</div>{% endif %}
 
 <div class="card" style="border: 2px dashed #007aff; padding: 20px; text-align: center;">
     <h3 style="margin-top:0;">📤 Ažuriranje baze alata</h3>
@@ -236,21 +236,24 @@ HTML_ADMIN = f'''<!doctype html><html>{HTML_HEAD}<body>
 </div>
 
 <h3 style="margin-top:25px;">👥 Odobrenje korisnika</h3>
-{{% for u in users %}}
+{% for u in users %}
 <div class="card" style="display:flex; justify-content:space-between; align-items:center;">
     <div>
-        <strong>{{{{ u[1] }}}}</strong><br>
-        <small style="color:#8e8e93;">Status: {{{{% if u[2] == 1 %}}}}<span style="color:#34c759;">Odobren</span>{{{{% else %}}}}<span style="color:#ff3b30;">Na čekanju</span>{{{{% endif %}}}}</small>
+        <strong>{{ u[1] }}</strong><br>
+        <small style="color:#8e8e93;">Status: {% if u[2] == 1 %}<span style="color:#34c759;">Odobren</span>{% else %}<span style="color:#ff3b30;">Na čekanju</span>{% endif %}</small>
     </div>
     <div>
-        {{{{% if u[2] == 0 %}}}}
-        <a href="/admin/odobri/{{{{ u[0] }}}}" class="btn-nav" style="background:#34c759; color:white;">Odobri</a>
-        {{{{% else %}}}}
-        <a href="/admin/blokiraj/{{{{ u[0] }}}}" class="btn-nav" style="background:#ff3b30; color:white;">Blokiraj</a>
-        {{{{% endif %}}}}
+        {% if u[2] == 0 %}
+        <a href="/admin/odobri/{{ u[0] }}" class="btn-nav" style="background:#34c759; color:white;">Odobri</a>
+        {% else %}
+        <a href="/admin/blokiraj/{{ u[0] }}" class="btn-nav" style="background:#ff3b30; color:white;">Blokiraj</a>
+        {% endif %}
     </div>
 </div>
-{{% else %}}
+{% else %}
 <p style="color:#8e8e93;">Nema registrovanih radnika.</p>
-{{% endfor %}}
+{% endfor %}
 </body></html>'''
+
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
