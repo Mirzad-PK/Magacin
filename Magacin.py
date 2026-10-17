@@ -59,7 +59,8 @@ def index():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    pretraga = request.args.get('pretraga', '')
+    sifra_pretraga = request.args.get('sifra', '')
+    naziv_pretraga = request.args.get('naziv', '')
     alati = []
     greska = None
 
@@ -67,19 +68,24 @@ def index():
         con = get_alati_db_connection()
         cur = con.cursor()
         
-        if pretraga:
-            sql = "SELECT SIFRA, NAZIV, KOLICINA, STATUS, LADICA FROM ALATI WHERE UPPER(NAZIV) LIKE UPPER(?) OR UPPER(SIFRA) LIKE UPPER(?)"
-            cur.execute(sql, (f'%{pretraga}%', f'%{pretraga}%'))
-        else:
-            sql = "SELECT SIFRA, NAZIV, KOLICINA, STATUS, LADICA FROM ALATI"
-            cur.execute(sql)
+        sql = "SELECT SIFRA, NAZIV, KOLICINA, STATUS, LADICA FROM ALATI WHERE 1=1"
+        params = []
+        
+        if sifra_pretraga:
+            sql += " AND UPPER(SIFRA) LIKE UPPER(?)"
+            params.append(f'%{sifra_pretraga}%')
             
+        if naziv_pretraga:
+            sql += " AND UPPER(NAZIV) LIKE UPPER(?)"
+            params.append(f'%{naziv_pretraga}%')
+            
+        cur.execute(sql, params)
         alati = cur.fetchall()
         con.close()
     except Exception as e:
         greska = f"Greška pri čitanju baze alata: {str(e)}"
 
-    return render_template_string(HTML_INDEX, alati=alati, pretraga=pretraga, greska=greska, username=session.get('username'), is_admin=session.get('is_admin'))
+    return render_template_string(HTML_INDEX, alati=alati, sifra_pretraga=sifra_pretraga, naziv_pretraga=naziv_pretraga, greska=greska, username=session.get('username'), is_admin=session.get('is_admin'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
@@ -227,6 +233,7 @@ HTML_HEAD = '''
         .badge-ladica { background: #ff9f0a; color: white; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
         .err { background: #ffe5e5; color: #ff3b30; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
         .ok { background: #e5ffe5; color: #34c759; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
+        .search-container { background: white; padding: 15px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
     </style>
 </head>
 '''
@@ -247,7 +254,17 @@ HTML_INDEX = '<doctype html><html>' + HTML_HEAD + '''<body>
 <h2>🔧 Stanje Alata</h2>
 {% if greska %}<div class="err">{{ greska }}</div>{% endif %}
 
-<form method="GET"><input type="text" name="pretraga" style="width:100%; padding:12px; font-size:16px; border:1px solid #c7c7cc; border-radius:8px; box-sizing:border-box; margin-bottom:15px;" placeholder="Pretraži po nazivu ili šifri..." value="{{ pretraga }}"></form>
+<div class="search-container">
+    <form method="GET">
+        <label style="font-size:13px; color:#8e8e93; font-weight:600;">Pretraga po šifri:</label>
+        <input type="text" name="sifra" placeholder="Unesi šifru alata..." value="{{ sifra_pretraga }}">
+        
+        <label style="font-size:13px; color:#8e8e93; font-weight:600; margin-top:8px; display:block;">Pretraga po nazivu:</label>
+        <input type="text" name="naziv" placeholder="Unesi naziv alata..." value="{{ naziv_pretraga }}">
+        
+        <button type="submit">Pretraži</button>
+    </form>
+</div>
 
 {% for alat in alati %}
 <div class="card">
