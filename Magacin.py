@@ -72,12 +72,12 @@ def index():
         params = []
         
         if sifra_pretraga:
-            sql += " AND UPPER(SIFRA) LIKE UPPER(?)"
-            params.append(f'%{sifra_pretraga}%')
+            sql += " AND (UPPER(SIFRA) LIKE UPPER(?) OR UPPER(NAZIV) LIKE UPPER(?) OR UPPER(LADICA) LIKE UPPER(?))"
+            params.extend([f'%{sifra_pretraga}%', f'%{sifra_pretraga}%', f'%{sifra_pretraga}%'])
             
         if naziv_pretraga:
-            sql += " AND UPPER(NAZIV) LIKE UPPER(?)"
-            params.append(f'%{naziv_pretraga}%')
+            sql += " AND (UPPER(SIFRA) LIKE UPPER(?) OR UPPER(NAZIV) LIKE UPPER(?) OR UPPER(LADICA) LIKE UPPER(?))"
+            params.extend([f'%{naziv_pretraga}%', f'%{naziv_pretraga}%', f'%{naziv_pretraga}%'])
             
         cur.execute(sql, params)
         alati = cur.fetchall()
@@ -260,12 +260,12 @@ HTML_INDEX = '<doctype html><html>' + HTML_HEAD + '''<body>
     <form method="GET">
         <div class="search-row">
             <div class="search-col">
-                <label style="font-size:11px; color:#8e8e93; font-weight:600;">Šifra:</label>
-                <input type="text" name="sifra" placeholder="Šifra..." value="{{ sifra_pretraga }}">
+                <label style="font-size:11px; color:#8e8e93; font-weight:600;">Šifra / Dio šifre:</label>
+                <input type="text" name="sifra" placeholder="npr. 120-10..." value="{{ sifra_pretraga }}">
             </div>
             <div class="search-col">
-                <label style="font-size:11px; color:#8e8e93; font-weight:600;">Naziv:</label>
-                <input type="text" name="naziv" placeholder="Naziv..." value="{{ naziv_pretraga }}">
+                <label style="font-size:11px; color:#8e8e93; font-weight:600;">Naziv / Pojam:</label>
+                <input type="text" name="naziv" placeholder="npr. ključ..." value="{{ naziv_pretraga }}">
             </div>
         </div>
         <button type="submit" style="margin-top:6px;">Pretraži</button>
