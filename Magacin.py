@@ -1,6 +1,7 @@
 from flask import Flask, render_template_string, request, redirect, url_for, session
 import sqlite3
 import os
+from pypdf import PdfReader
 
 app = Flask(__name__)
 app.secret_key = 'tajni_kljuc_za_sigurnost_app_123'
@@ -40,9 +41,11 @@ def init_alati_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS ALATI (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            SIFRA TEXT,
             NAZIV TEXT NOT NULL,
             KOLICINA INTEGER DEFAULT 0,
-            STATUS TEXT DEFAULT 'Dostupno'
+            STATUS TEXT DEFAULT 'Dostupno',
+            LADICA TEXT
         )
     ''')
     conn.commit()
@@ -65,10 +68,10 @@ def index():
         cur = con.cursor()
         
         if pretraga:
-            sql = "SELECT NAZIV, KOLICINA, STATUS FROM ALATI WHERE UPPER(NAZIV) LIKE UPPER(?)"
-            cur.execute(sql, (f'%{pretraga}%',))
+            sql = "SELECT SIFRA, NAZIV, KOLICINA, STATUS, LADICA FROM ALATI WHERE UPPER(NAZIV) LIKE UPPER(?) OR UPPER(SIFRA) LIKE UPPER(?)"
+            cur.execute(sql, (f'%{pretraga}%', f'%{pretraga}%'))
         else:
-            sql = "SELECT NAZIV, KOLICINA, STATUS FROM ALATI"
+            sql = "SELECT SIFRA, NAZIV, KOLICINA, STATUS, LADICA FROM ALATI"
             cur.execute(sql)
             
         alati = cur.fetchall()
@@ -135,13 +138,48 @@ def admin():
         return "Pristup odbijen!", 403
     
     poruka = None
-    if request.method == 'POST' and 'db_file' in request.files:
-        file = request.files['db_file']
-        if file and (file.filename.endswith('.db') or file.filename.endswith('.sqlite')):
-            file.save(ALATI_DB_PATH)
-            poruka = "Nova baza alata je uspješno učitana!"
+    if request.method == 'POST' and 'pdf_file' in request.files:
+        file = request.files['pdf_file']
+        if file and file.filename.endswith('.pdf'):
+            pdf_path = os.path.join(BASE_DIR, 'temp.pdf')
+            file.save(pdf_path)
+            
+            try:
+                reader = PdfReader(pdf_path)
+                conn = get_alati_db_connection()
+                cursor = conn.cursor()
+                # Očistimo staru tabelu prije uvoza nove
+                cursor.execute('DELETE FROM ALATI')
+                
+                for page in reader.pages:
+                    text = page.extract_text()
+                    if text:
+                        lines = text.split('\n')
+                        for line in lines:
+                            parts = line.split()
+                            if len(parts) >= 3:
+                                # Pretpostavka formata u PDF-u: Sifra, Naziv, Kolicina, Status, Ladica
+                                sifra = parts[0]
+                                kolicina = parts[-3] if len(parts) >= 5 else "1"
+                                status = parts[-2] if len(parts) >= 5 else "Dostupno"
+                                ladica = parts[-1] if len(parts) >= 5 else "Nepoznato"
+                                naziv = " ".join(parts[1:-3]) if len(parts) >= 5 else " ".join(parts[1:-1])
+                                
+                                try:
+                                    kol_num = int(kolicina)
+                                except ValueError:
+                                    kol_num = 1
+                                    
+                                cursor.execute('INSERT INTO ALATI (SIFRA, NAZIV, KOLICINA, STATUS, LADICA) VALUES (?, ?, ?, ?, ?)',
+                                               (sifra, naziv, kol_num, status, ladica))
+                                               
+                conn.commit()
+                conn.close()
+                poruka = "PDF baza alata je uspješno učitana i obrađena!"
+            except Exception as e:
+                poruka = f"Greška pri čitanju PDF-a: {str(e)}"
         else:
-            poruka = "Molimo izaberite ispravan SQLite fajl (.db ili .sqlite)!"
+            poruka = "Molimo izaberite ispravan .pdf fajl!"
     
     conn = get_user_db_connection()
     cursor = conn.cursor()
@@ -188,6 +226,7 @@ HTML_HEAD = '''
         .btn-nav { font-size: 13px; padding: 6px 12px; background: #e5e5ea; text-decoration: none; color: #007aff; border-radius: 6px; font-weight: 500; }
         .card { background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
         .badge { background: #e5e5ea; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
+        .badge-ladica { background: #ff9f0a; color: white; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
         .err { background: #ffe5e5; color: #ff3b30; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
         .ok { background: #e5ffe5; color: #34c759; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
     </style>
@@ -210,17 +249,20 @@ HTML_INDEX = f'''<!doctype html><html>{HTML_HEAD}<body>
 <h2>🔧 Stanje Alata</h2>
 {{% if greska %}}<div class="err">{{{{ greska }}}}</div>{{% endif %}}
 
-<form method="GET"><input type="text" name="pretraga" style="width:100%; padding:12px; font-size:16px; border:1px solid #c7c7cc; border-radius:8px; box-sizing:border-box; margin-bottom:15px;" placeholder="Pretraži alat..." value="{{{{ pretraga }}}}"></form>
+<form method="GET"><input type="text" name="pretraga" style="width:100%; padding:12px; font-size:16px; border:1px solid #c7c7cc; border-radius:8px; box-sizing:border-box; margin-bottom:15px;" placeholder="Pretraži po nazivu ili šifri..." value="{{{{ pretraga }}}}"></form>
 
 {{% for alat in alati %}}
 <div class="card">
-    <h3 style="margin:0 0 8px 0; color:#000;">{{{{ alat[0] }}}}</h3>
-    <p style="margin:4px 0; color:#8e8e93;">Količina: <strong style="color:#000;">{{{{ alat[1] }}}}</strong></p>
-    <p style="margin:4px 0; color:#8e8e93;">Status: <span class="badge">{{{{ alat[2] }}}}</span></p>
+    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
+        <h3 style="margin:0 0 8px 0; color:#000;">{{{{ alat[1] }}}}</h3>
+        <span class="badge-ladica">🗄️ Ladica: {{{{ alat[4] }}}}</span>
+    </div>
+    <p style="margin:4px 0; color:#8e8e93; font-size:13px;">Šifra: <code>{{{{ alat[0] }}}}</code></p>
+    <p style="margin:4px 0; color:#8e8e93;">Količina: <strong style="color:#000;">{{{{ alat[2] }}}}</strong> | Status: <span class="badge">{{{{ alat[3] }}}}</span></p>
 </div>
 {{% else %}}
 <p style="text-align:center; color:#8e8e93;">Nema pronađenih alata.</p>
-{{% endfor %}}
+{{% endfor %})
 </body></html>'''
 
 HTML_ADMIN = '''<!doctype html><html>''' + HTML_HEAD + '''<body>
@@ -230,11 +272,11 @@ HTML_ADMIN = '''<!doctype html><html>''' + HTML_HEAD + '''<body>
 {% if poruka %}<div class="ok">{{ poruka }}</div>{% endif %}
 
 <div class="card" style="border: 2px dashed #007aff; padding: 20px; text-align: center;">
-    <h3 style="margin-top:0;">📤 Ažuriranje baze alata (.db / .sqlite)</h3>
-    <p style="font-size:13px; color:#8e8e93;">Izaberite novu SQLite bazu alata sa računara ili mobitela:</p>
+    <h3 style="margin-top:0;">📤 Učitavanje PDF izvještaja alata</h3>
+    <p style="font-size:13px; color:#8e8e93;">Izaberite PDF izvještaj iz vašeg programa:</p>
     <form method="POST" enctype="multipart/form-data">
-        <input type="file" name="db_file" accept=".db,.sqlite" required>
-        <button type="submit" style="background:#34c759;">Učitaj novu bazu</button>
+        <input type="file" name="pdf_file" accept=".pdf" required>
+        <button type="submit" style="background:#34c759;">Učitaj PDF bazu</button>
     </form>
 </div>
 
