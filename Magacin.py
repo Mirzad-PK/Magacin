@@ -6,10 +6,9 @@ import os
 app = Flask(__name__)
 app.secret_key = 'tajni_kljuc_za_sigurnost_app_123'
 
-# Putanje za baze na serveru
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_DB_PATH = os.path.join(BASE_DIR, 'korisnici.db')
-FDB_PATH = os.path.join(BASE_DIR, 'baza_magacin.fdb')  # Ovdje se spravlja ucitani .fdb fajl
+FDB_PATH = os.path.join(BASE_DIR, 'baza_magacin.fdb')
 
 def get_user_db_connection():
     return sqlite3.connect(USER_DB_PATH)
@@ -44,9 +43,8 @@ def init_user_db():
     conn.commit()
     conn.close()
 
-# ---------------------------------------------------------
-# RUTE
-# ---------------------------------------------------------
+# Odmah pokrećemo kreiranje baze pri učitavanju aplikacije da spriječimo grešku
+init_user_db()
 
 @app.route('/')
 def index():
@@ -171,15 +169,10 @@ def blokiraj(user_id):
         conn.close()
     return redirect(url_for('admin'))
 
-# ---------------------------------------------------------
-# HTML DIZAJN (OPTIIMIZIRAN ZA iOS / iPHONE PWA)
-# ---------------------------------------------------------
-
 HTML_HEAD = '''
 <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-    <!-- iOS / Safari App Podrška -->
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
     <meta name="apple-mobile-web-app-title" content="Magacin">
@@ -234,7 +227,6 @@ HTML_ADMIN = f'''<!doctype html><html>{HTML_HEAD}<body>
 
 {{% if poruka %}}<div class="ok">{{{{ poruka }}}}</div>{{% endif %}}
 
-<!-- SEKCIJA ZA DNEVNO UČITAVANJE .FDB FAJLA -->
 <div class="card" style="border: 2px dashed #007aff; padding: 20px; text-align: center;">
     <h3 style="margin-top:0;">📤 Ažuriranje baze alata</h3>
     <p style="font-size:13px; color:#8e8e93;">Izaberite novu .fdb bazu sa računara ili mobitela:</p>
@@ -253,7 +245,7 @@ HTML_ADMIN = f'''<!doctype html><html>{HTML_HEAD}<body>
     </div>
     <div>
         {{{{% if u[2] == 0 %}}}}
-        <a href="/admin/odobri/{{{{ u[0] }}}}" class="btn-nav" style="background:#34c759; color:white;">Odobri</a>
+        <a href="/admin/odobri{{{{ u[0] }}}}" class="btn-nav" style="background:#34c759; color:white;">Odobri</a>
         {{{{% else %}}}}
         <a href="/admin/blokiraj/{{{{ u[0] }}}}" class="btn-nav" style="background:#ff3b30; color:white;">Blokiraj</a>
         {{{{% endif %}}}}
@@ -263,7 +255,3 @@ HTML_ADMIN = f'''<!doctype html><html>{HTML_HEAD}<body>
 <p style="color:#8e8e93;">Nema registrovanih radnika.</p>
 {{% endfor %}}
 </body></html>'''
-
-if __name__ == '__main__':
-    init_user_db()
-    app.run(host='0.0.0.0', port=5000, debug=True)
