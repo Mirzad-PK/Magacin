@@ -1,6 +1,5 @@
 from flask import Flask, render_template_string, request, redirect, url_for, session
 import sqlite3
-import firebirdsql
 import os
 
 app = Flask(__name__)
@@ -8,21 +7,13 @@ app.secret_key = 'tajni_kljuc_za_sigurnost_app_123'
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 USER_DB_PATH = os.path.join(BASE_DIR, 'korisnici.db')
-FDB_PATH = os.path.join(BASE_DIR, 'baza_magacin.fdb')
+ALATI_DB_PATH = os.path.join(BASE_DIR, 'baza_magacin.db')
 
 def get_user_db_connection():
     return sqlite3.connect(USER_DB_PATH)
 
-def get_firebird_connection():
-    if not os.path.exists(FDB_PATH):
-        return None
-    return firebirdsql.connect(
-        host='localhost',
-        database=FDB_PATH,
-        user='SYSDBA',
-        password='masterkey',
-        charset='UTF8'
-    )
+def get_alati_db_connection():
+    return sqlite3.connect(ALATI_DB_PATH)
 
 def init_user_db():
     conn = get_user_db_connection()
@@ -43,7 +34,22 @@ def init_user_db():
     conn.commit()
     conn.close()
 
+def init_alati_db():
+    conn = get_alati_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS ALATI (
+            ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            NAZIV TEXT NOT NULL,
+            KOLICINA INTEGER DEFAULT 0,
+            STATUS TEXT DEFAULT 'Dostupno'
+        )
+    ''')
+    conn.commit()
+    conn.close()
+
 init_user_db()
+init_alati_db()
 
 @app.route('/')
 def index():
@@ -54,24 +60,21 @@ def index():
     alati = []
     greska = None
 
-    if not os.path.exists(FDB_PATH):
-        greska = "Baza podataka (.fdb) još uvijek nije učitana od strane administratora."
-    else:
-        try:
-            con = get_firebird_connection()
-            cur = con.cursor()
+    try:
+        con = get_alati_db_connection()
+        cur = con.cursor()
+        
+        if pretraga:
+            sql = "SELECT NAZIV, KOLICINA, STATUS FROM ALATI WHERE UPPER(NAZIV) LIKE UPPER(?)"
+            cur.execute(sql, (f'%{pretraga}%',))
+        else:
+            sql = "SELECT NAZIV, KOLICINA, STATUS FROM ALATI"
+            cur.execute(sql)
             
-            if pretraga:
-                sql = "SELECT NAZIV, KOLICINA, STATUS FROM ALATI WHERE UPPER(NAZIV) LIKE UPPER(?)"
-                cur.execute(sql, (f'%{pretraga}%',))
-            else:
-                sql = "SELECT NAZIV, KOLICINA, STATUS FROM ALATI"
-                cur.execute(sql)
-                
-            alati = cur.fetchall()
-            con.close()
-        except Exception as e:
-            greska = f"Greška pri čitanju baze: {str(e)}"
+        alati = cur.fetchall()
+        con.close()
+    except Exception as e:
+        greska = f"Greška pri čitanju baze alata: {str(e)}"
 
     return render_template_string(HTML_INDEX, alati=alati, pretraga=pretraga, greska=greska, username=session.get('username'), is_admin=session.get('is_admin'))
 
@@ -132,13 +135,13 @@ def admin():
         return "Pristup odbijen!", 403
     
     poruka = None
-    if request.method == 'POST' and 'fdb_file' in request.files:
-        file = request.files['fdb_file']
-        if file and file.filename.endswith('.fdb'):
-            file.save(FDB_PATH)
+    if request.method == 'POST' and 'db_file' in request.files:
+        file = request.files['db_file']
+        if file and (file.filename.endswith('.db') or file.filename.endswith('.sqlite')):
+            file.save(ALATI_DB_PATH)
             poruka = "Nova baza alata je uspješno učitana!"
         else:
-            poruka = "Molimo izaberite ispravan .fdb fajl!"
+            poruka = "Molimo izaberite ispravan SQLite fajl (.db ili .sqlite)!"
     
     conn = get_user_db_connection()
     cursor = conn.cursor()
@@ -227,10 +230,10 @@ HTML_ADMIN = '''<!doctype html><html>''' + HTML_HEAD + '''<body>
 {% if poruka %}<div class="ok">{{ poruka }}</div>{% endif %}
 
 <div class="card" style="border: 2px dashed #007aff; padding: 20px; text-align: center;">
-    <h3 style="margin-top:0;">📤 Ažuriranje baze alata</h3>
-    <p style="font-size:13px; color:#8e8e93;">Izaberite novu .fdb bazu sa računara ili mobitela:</p>
+    <h3 style="margin-top:0;">📤 Ažuriranje baze alata (.db / .sqlite)</h3>
+    <p style="font-size:13px; color:#8e8e93;">Izaberite novu SQLite bazu alata sa računara ili mobitela:</p>
     <form method="POST" enctype="multipart/form-data">
-        <input type="file" name="fdb_file" accept=".fdb" required>
+        <input type="file" name="db_file" accept=".db,.sqlite" required>
         <button type="submit" style="background:#34c759;">Učitaj novu bazu</button>
     </form>
 </div>
