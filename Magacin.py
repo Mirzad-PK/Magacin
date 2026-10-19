@@ -41,11 +41,11 @@ def init_alati_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS ALATI (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
-            LADICA TEXT,
-            SIFRA TEXT,
-            NAZIV TEXT NOT NULL,
-            KOLICINA INTEGER DEFAULT 0,
-            STATUS TEXT DEFAULT 'Dostupno'
+            BROJ_LADICE TEXT,
+            SIFRA_ALATA TEXT,
+            NAZIV_ALATA TEXT,
+            GEOMETRIJA TEXT,
+            KOLICINA INTEGER DEFAULT 0
         )
     ''')
     conn.commit()
@@ -68,16 +68,16 @@ def index():
         con = get_alati_db_connection()
         cur = con.cursor()
         
-        sql = "SELECT LADICA, SIFRA, NAZIV, KOLICINA, STATUS FROM ALATI WHERE 1=1"
+        sql = "SELECT BROJ_LADICE, SIFRA_ALATA, NAZIV_ALATA, GEOMETRIJA, KOLICINA FROM ALATI WHERE 1=1"
         params = []
         
         if sifra_pretraga:
-            sql += " AND (UPPER(SIFRA) LIKE UPPER(?) OR UPPER(LADICA) LIKE UPPER(?))"
+            sql += " AND (UPPER(SIFRA_ALATA) LIKE UPPER(?) OR UPPER(BROJ_LADICE) LIKE UPPER(?))"
             params.extend([f'%{sifra_pretraga}%', f'%{sifra_pretraga}%'])
             
         if naziv_pretraga:
-            sql += " AND (UPPER(NAZIV) LIKE UPPER(?) OR UPPER(SIFRA) LIKE UPPER(?))"
-            params.extend([f'%{naziv_pretraga}%', f'%{naziv_pretraga}%'])
+            sql += " AND (UPPER(NAZIV_ALATA) LIKE UPPER(?) OR UPPER(GEOMETRIJA) LIKE UPPER(?) OR UPPER(SIFRA_ALATA) LIKE UPPER(?))"
+            params.extend([f'%{naziv_pretraga}%', f'%{naziv_pretraga}%', f'%{naziv_pretraga}%'])
             
         cur.execute(sql, params)
         alati = cur.fetchall()
@@ -162,33 +162,39 @@ def admin():
                         lines = text.split('\n')
                         for line in lines:
                             parts = line.split()
-                            # Provjeravamo da li red sadrži dovoljno elemenata za obradu
-                            if len(parts) >= 4:
-                                ladica = parts[0]
+                            # Redovi počinju sa SPM ili oznakom ladice i završavaju brojem količine
+                            if len(parts) >= 3:
                                 kolicina_str = parts[-1]
-                                
                                 try:
                                     kol_num = int(kolicina_str)
                                 except ValueError:
-                                    continue  # Ako zadnji dio nije broj, preskoči zaglavlja ili nevažeće redove
-                                    
-                                # Sve između ladice i količine su šifra alata, šifra materijala i naziv
-                                sredina = parts[1:-1]
-                                cijeli_tekst = " ".join(sredina)
+                                    continue # Preskačemo zaglavlje tabele ("Broj Latice", "Kolicina"...)
                                 
-                                # Pokušajmo razdvojiti prema strukturi (šifra je obično na početku, naziv na kraju)
-                                sifra = sredina[0] if len(sredina) > 0 else ""
-                                if len(sredina) > 2 and sredina[1] == '-':
-                                    sifra = f"{sredina[0]} - {sredina[2]}"
-                                    naziv_tokens = sredina[3:]
+                                # Primjer linije: SPM - LAD 59 TP 121-4.2-M-C (Ap70) Burgija TPSB-2 HM...
+                                if parts[0] == "SPM" and len(parts) >= 4:
+                                    broj_ladice = f"{parts[0]} {parts[1]} {parts[2]}" # SPM - LAD
+                                    ostalo = parts[3:-1]
                                 else:
-                                    naziv_tokens = sredina[1:]
-                                    
-                                naziv = " ".join(naziv_tokens) if naziv_tokens else cijeli_tekst
-                                status = "Dostupno"
+                                    broj_ladice = parts[0]
+                                    ostalo = parts[1:-1]
                                 
-                                cursor.execute('INSERT INTO ALATI (LADICA, SIFRA, NAZIV, KOLICINA, STATUS) VALUES (?, ?, ?, ?, ?)',
-                                               (ladica, sifra, naziv, kol_num, status))
+                                # Razdvajanje šifre, naziva i geometrije
+                                sifra_alata = ostalo[0] if len(ostalo) > 0 else ""
+                                
+                                # Ako šifra sadrži dodatne detalje u zagradi (npr. (Ap70))
+                                idx_ostalo = 1
+                                if len(ostalo) > 1 and ostalo[1].startswith("("):
+                                    sifra_alata += " " + ostalo[1]
+                                    idx_ostalo = 2
+                                    
+                                spojeno_ostalo = " ".join(ostalo[idx_ostalo:])
+                                
+                                # Naziv i geometrija
+                                naziv_alata = spojeno_ostalo
+                                geometrija = ""
+                                
+                                cursor.execute('INSERT INTO ALATI (BROJ_LADICE, SIFRA_ALATA, NAZIV_ALATA, GEOMETRIJA, KOLICINA) VALUES (?, ?, ?, ?, ?)',
+                                               (broj_ladice, sifra_alata, naziv_alata, geometrija, kol_num))
                                 
                 conn.commit()
                 conn.close()
@@ -241,14 +247,19 @@ HTML_HEAD = '''
         button, input[type="submit"] { width: 100%; padding: 10px; background: #007aff; color: white; border: none; border-radius: 8px; font-weight: 600; font-size: 15px; cursor: pointer; margin-top: 5px; }
         .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
         .btn-nav { font-size: 13px; padding: 6px 12px; background: #e5e5ea; text-decoration: none; color: #007aff; border-radius: 6px; font-weight: 500; }
-        .card { background: white; padding: 15px; border-radius: 10px; margin-bottom: 10px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
-        .badge { background: #e5e5ea; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
-        .badge-ladica { background: #ff9f0a; color: white; padding: 3px 8px; border-radius: 4px; font-size: 12px; font-weight: 600; }
         .err { background: #ffe5e5; color: #ff3b30; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
         .ok { background: #e5ffe5; color: #34c759; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
         .search-container { background: white; padding: 12px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .search-row { display: flex; gap: 8px; }
         .search-col { flex: 1; }
+        
+        /* Tabela identična slici iz programa */
+        .table-responsive { overflow-x: auto; background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
+        table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
+        th, td { padding: 8px 12px; border-bottom: 1px solid #e5e5ea; }
+        th { background: #f8f8fa; font-weight: 600; color: #3a3a3c; }
+        tr:hover { background-color: #f2f2f7; }
+        .txt-code { font-family: monospace; font-size: 12px; }
     </style>
 </head>
 '''
@@ -273,30 +284,46 @@ HTML_INDEX = '<doctype html><html>' + HTML_HEAD + '''<body>
     <form method="GET">
         <div class="search-row">
             <div class="search-col">
-                <label style="font-size:11px; color:#8e8e93; font-weight:600;">Šifra / Dio šifre:</label>
-                <input type="text" name="sifra" placeholder="npr. 4836..." value="{{ sifra_pretraga }}">
+                <label style="font-size:11px; color:#8e8e93; font-weight:600;">Broj ladice / Šifra:</label>
+                <input type="text" name="sifra" placeholder="npr. LAD 59 ili TP 121..." value="{{ sifra_pretraga }}">
             </div>
             <div class="search-col">
                 <label style="font-size:11px; color:#8e8e93; font-weight:600;">Naziv / Pojam:</label>
-                <input type="text" name="naziv" placeholder="npr. glodalo..." value="{{ naziv_pretraga }}">
+                <input type="text" name="naziv" placeholder="npr. Burgija..." value="{{ naziv_pretraga }}">
             </div>
         </div>
         <button type="submit" style="margin-top:6px;">Pretraži</button>
     </form>
 </div>
 
-{% for alat in alati %}
-<div class="card">
-    <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <h3 style="margin:0 0 8px 0; color:#000;">{{ alat[2] }}</h3>
-        <span class="badge-ladica">🗄️ Ladica: {{ alat[0] }}</span>
-    </div>
-    <p style="margin:4px 0; color:#8e8e93; font-size:13px;">Šifra: <code>{{ alat[1] }}</code></p>
-    <p style="margin:4px 0; color:#8e8e93;">Količina: <strong style="color:#000;">{{ alat[3] }}</strong> | Status: <span class="badge">{{ alat[4] }}</span></p>
+<div class="table-responsive">
+    <table>
+        <thead>
+            <tr>
+                <th>Broj Ladice</th>
+                <th>Šifra alata</th>
+                <th>Naziv alata</th>
+                <th>Geometrija</th>
+                <th style="text-align:right;">Količina</th>
+            </tr>
+        </thead>
+        <tbody>
+            {% for alat in alati %}
+            <tr>
+                <td><strong>{{ alat[0] }}</strong></td>
+                <td class="txt-code">{{ alat[1] }}</td>
+                <td>{{ alat[2] }}</td>
+                <td>{{ alat[3] }}</td>
+                <td style="text-align:right;"><strong>{{ alat[4] }}</strong></td>
+            </tr>
+            {% else %}
+            <tr>
+                <td colspan="5" style="text-align:center; color:#8e8e93; padding:20px;">Nema pronađenih alata.</td>
+            </tr>
+            {% endfor %}
+        </tbody>
+    </table>
 </div>
-{% else %}
-<p style="text-align:center; color:#8e8e93;">Nema pronađenih alata.</p>
-{% endfor %}
 </body></html>'''
 
 HTML_ADMIN = '<doctype html><html>' + HTML_HEAD + '''<body>
@@ -305,34 +332,6 @@ HTML_ADMIN = '<doctype html><html>' + HTML_HEAD + '''<body>
 
 {% if poruka %}<div class="ok">{{ poruka }}</div>{% endif %}
 
-<div class="card" style="border: 2px dashed #007aff; padding: 20px; text-align: center;">
+<div class="box" style="border: 2px dashed #007aff; padding: 20px; text-align: center; max-width: 100%; box-sizing: border-box;">
     <h3 style="margin-top:0;">📤 Učitavanje PDF izvještaja alata</h3>
-    <p style="font-size:13px; color:#8e8e93;">Izaberite PDF izvještaj iz vašeg programa:</p>
-    <form method="POST" enctype="multipart/form-data">
-        <input type="file" name="pdf_file" accept=".pdf" required>
-        <button type="submit" style="background:#34c759;">Učitaj PDF bazu</button>
-    </form>
-</div>
-
-<h3 style="margin-top:25px;">👥 Odobrenje korisnika</h3>
-{% for u in users %}
-<div class="card" style="display:flex; justify-content:space-between; align-items:center;">
-    <div>
-        <strong>{{ u[1] }}</strong><br>
-        <small style="color:#8e8e93;">Status: {% if u[2] == 1 %}<span style="color:#34c759;">Odobren</span>{% else %}<span style="color:#ff3b30;">Na čekanju</span>{% endif %}</small>
-    </div>
-    <div>
-        {% if u[2] == 0 %}
-        <a href="/admin/odobri/{{ u[0] }}" class="btn-nav" style="background:#34c759; color:white;">Odobri</a>
-        {% else %}
-        <a href="/admin/blokiraj/{{ u[0] }}" class="btn-nav" style="background:#ff3b30; color:white;">Blokiraj</a>
-        {% endif %}
-    </div>
-</div>
-{% else %}
-<p style="color:#8e8e93;">Nema registrovanih radnika.</p>
-{% endfor %}
-</body></html>'''
-
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    <p style="font-size:13px; color:#8e8e93;">Izaberite PDF izvještaj iz vašeg programa
