@@ -41,11 +41,11 @@ def init_alati_db():
     cursor.execute('''
         CREATE TABLE IF NOT EXISTS ALATI (
             ID INTEGER PRIMARY KEY AUTOINCREMENT,
+            LADICA TEXT,
             SIFRA TEXT,
             NAZIV TEXT NOT NULL,
             KOLICINA INTEGER DEFAULT 0,
-            STATUS TEXT DEFAULT 'Dostupno',
-            LADICA TEXT
+            STATUS TEXT DEFAULT 'Dostupno'
         )
     ''')
     conn.commit()
@@ -68,7 +68,7 @@ def index():
         con = get_alati_db_connection()
         cur = con.cursor()
         
-        sql = "SELECT SIFRA, NAZIV, KOLICINA, STATUS, LADICA FROM ALATI WHERE 1=1"
+        sql = "SELECT LADICA, SIFRA, NAZIV, KOLICINA, STATUS FROM ALATI WHERE 1=1"
         params = []
         
         if sifra_pretraga:
@@ -163,20 +163,21 @@ def admin():
                         for line in lines:
                             parts = line.split()
                             if len(parts) >= 3:
-                                sifra = parts[0]
+                                # Prilagođeno: Prva kolona je ladica, druga sifra, treća naziv (uzimajući u obzir strukturu redova iz PDF-a)
+                                ladica = parts[0]
+                                sifra = parts[1]
                                 kolicina = parts[-3] if len(parts) >= 5 else "1"
                                 status = parts[-2] if len(parts) >= 5 else "Dostupno"
-                                ladica = parts[-1] if len(parts) >= 5 else "Nepoznato"
-                                naziv = " ".join(parts[1:-3]) if len(parts) >= 5 else " ".join(parts[1:-1])
+                                naziv = " ".join(parts[2:-3]) if len(parts) >= 5 else " ".join(parts[2:-1])
                                 
                                 try:
                                     kol_num = int(kolicina)
                                 except ValueError:
                                     kol_num = 1
                                     
-                                cursor.execute('INSERT INTO ALATI (SIFRA, NAZIV, KOLICINA, STATUS, LADICA) VALUES (?, ?, ?, ?, ?)',
-                                               (sifra, naziv, kol_num, status, ladica))
-                                               
+                                cursor.execute('INSERT INTO ALATI (LADICA, SIFRA, NAZIV, KOLICINA, STATUS) VALUES (?, ?, ?, ?, ?)',
+                                               (ladica, sifra, naziv, kol_num, status))
+                                
                 conn.commit()
                 conn.close()
                 poruka = "PDF baza alata je uspješno učitana i obrađena!"
@@ -275,11 +276,11 @@ HTML_INDEX = '<doctype html><html>' + HTML_HEAD + '''<body>
 {% for alat in alati %}
 <div class="card">
     <div style="display:flex; justify-content:space-between; align-items:flex-start;">
-        <h3 style="margin:0 0 8px 0; color:#000;">{{ alat[1] }}</h3>
-        <span class="badge-ladica">🗄️ Ladica: {{ alat[4] }}</span>
+        <h3 style="margin:0 0 8px 0; color:#000;">{{ alat[2] }}</h3>
+        <span class="badge-ladica">🗄️ Ladica: {{ alat[0] }}</span>
     </div>
-    <p style="margin:4px 0; color:#8e8e93; font-size:13px;">Šifra: <code>{{ alat[0] }}</code></p>
-    <p style="margin:4px 0; color:#8e8e93;">Količina: <strong style="color:#000;">{{ alat[2] }}</strong> | Status: <span class="badge">{{ alat[3] }}</span></p>
+    <p style="margin:4px 0; color:#8e8e93; font-size:13px;">Šifra: <code>{{ alat[1] }}</code></p>
+    <p style="margin:4px 0; color:#8e8e93;">Količina: <strong style="color:#000;">{{ alat[3] }}</strong> | Status: <span class="badge">{{ alat[4] }}</span></p>
 </div>
 {% else %}
 <p style="text-align:center; color:#8e8e93;">Nema pronađenih alata.</p>
