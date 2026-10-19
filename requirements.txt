@@ -1,3 +1,2 @@
-Flask
-gunicorn
-pypdf
+Flask==3.0.2
+striprtf==3.9.0
