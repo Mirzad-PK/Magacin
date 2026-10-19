@@ -1,0 +1,39 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prijava - Magacin Alata</title>
+    <style>
+        body { background-color: #f4f7f6; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; display: flex; justify-content: center; align-items: center; height: 100vh; margin: 0; }
+        .login-box { background: white; padding: 30px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); width: 100%; max-width: 380px; text-align: center; }
+        h2 { color: #2c3e50; margin-bottom: 20px; }
+        input { width: 100%; padding: 12px; margin-bottom: 15px; border: 2px solid #cbd5e1; border-radius: 6px; box-sizing: border-box; font-size: 16px; outline: none; }
+        input:focus { border-color: #3498db; }
+        button { width: 100%; background-color: #3498db; color: white; border: none; padding: 12px; border-radius: 6px; font-size: 16px; font-weight: bold; cursor: pointer; transition: background 0.2s; }
+        button:hover { background-color: #2980b9; }
+        .error { color: #e74c3c; margin-bottom: 15px; font-size: 14px; font-weight: bold; }
+        .links { margin-top: 15px; font-size: 14px; }
+        .links a { color: #3498db; text-decoration: none; font-weight: bold; }
+        .links a:hover { text-decoration: underline; }
+    </style>
+</head>
+<body>
+
+<div class="login-box">
+    <h2>Prijava u Magacin</h2>
+    {% if error %}
+        <div class="error">{{ error }}</div>
+    {% endif %}
+    <form method="POST">
+        <input type="text" name="username" placeholder="Korisničko ime" required autocomplete="off">
+        <input type="password" name="password" placeholder="Lozinka" required>
+        <button type="submit">Prijavi se</button>
+    </form>
+    <div class="links">
+        Nemate račun? <a href="/register">Registrirajte se</a>
+    </div>
+</div>
+
+</body>
+</html>
