@@ -156,6 +156,7 @@ def admin():
                 cursor = conn.cursor()
                 cursor.execute('DELETE FROM ALATI')
                 
+                ukupno_ucitano = 0
                 for page in reader.pages:
                     text = page.extract_text()
                     if text:
@@ -169,29 +170,30 @@ def admin():
                                 except ValueError:
                                     continue 
                                 
-                                if parts[0] == "SPM" and len(parts) >= 4:
+                                if len(parts) >= 4 and parts[0] == "SPM":
                                     broj_ladice = f"{parts[0]} {parts[1]} {parts[2]}"
-                                    ostalo = parts[3:-1]
+                                    sredina = parts[3:-1]
                                 else:
                                     broj_ladice = parts[0]
-                                    ostalo = parts[1:-1]
+                                    sredina = parts[1:-1]
                                 
-                                sifra_alata = ostalo[0] if len(ostalo) > 0 else ""
-                                idx_ostalo = 1
-                                if len(ostalo) > 1 and ostalo[1].startswith("("):
-                                    sifra_alata += " " + ostalo[1]
-                                    idx_ostalo = 2
+                                sifra_alata = sredina[0] if len(sredina) > 0 else ""
+                                idx = 1
+                                if len(sredina) > 1 and sredina[1].startswith("("):
+                                    sifra_alata += " " + sredina[1]
+                                    idx = 2
                                     
-                                spojeno_ostalo = " ".join(ostalo[idx_ostalo:])
-                                naziv_alata = spojeno_ostalo
+                                ostalo_tekst = " ".join(sredina[idx:])
+                                naziv_alata = ostalo_tekst
                                 geometrija = ""
                                 
                                 cursor.execute('INSERT INTO ALATI (BROJ_LADICE, SIFRA_ALATA, NAZIV_ALATA, GEOMETRIJA, KOLICINA) VALUES (?, ?, ?, ?, ?)',
                                                (broj_ladice, sifra_alata, naziv_alata, geometrija, kol_num))
+                                ukupno_ucitano += 1
                                 
                 conn.commit()
                 conn.close()
-                poruka = "PDF baza alata je uspješno učitana i obrađena!"
+                poruka = f"Uspješno učitano i obrađeno {ukupno_ucitano} stavki sa svih stranica PDF baze!"
             except Exception as e:
                 poruka = f"Greška pri čitanju PDF-a: {str(e)}"
         else:
