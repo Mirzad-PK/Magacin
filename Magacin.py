@@ -1,7 +1,7 @@
 from flask import Flask, render_template_string, request, redirect, url_for, session
 import sqlite3
 import os
-import re
+import pandas as pd
 
 app = Flask(__name__)
 app.secret_key = 'tajni_kljuc_za_sigurnost_app_123'
@@ -53,11 +53,6 @@ def init_alati_db():
 
 init_user_db()
 init_alati_db()
-
-def rtf_to_text_simple(rtf_content):
-    text = re.sub(r"\\([a-z]{1,32})(-?\d{1,10})?[ ]?", "", rtf_content)
-    text = re.sub(r"[\{\}]", "", text)
-    return text
 
 @app.route('/')
 def index():
@@ -150,68 +145,50 @@ def admin():
         return "Pristup odbijen!", 403
     
     poruka = None
-    if request.method == 'POST' and 'rtf_file' in request.files:
-        file = request.files['rtf_file']
-        if file and file.filename.endswith('.rtf'):
-            rtf_path = os.path.join(BASE_DIR, 'temp.rtf')
-            file.save(rtf_path)
+    if request.method == 'POST' and 'excel_file' in request.files:
+        file = request.files['excel_file']
+        if file and (file.filename.endswith('.xlsx') or file.filename.endswith('.xls') or file.filename.endswith('.csv')):
+            file_path = os.path.join(BASE_DIR, 'temp_file')
+            file.save(file_path)
             
             try:
-                with open(rtf_path, 'r', encoding='utf-8', errors='ignore') as f:
-                    rtf_sadrzaj = f.read()
-                text = rtf_to_text_simple(rtf_sadrzaj)
+                # Čitanje Excel ili CSV fajla preko Pandasa (garantuje tačan raspored kolona)
+                if file.filename.endswith('.csv'):
+                    df = pd.read_csv(file_path)
+                else:
+                    df = pd.read_excel(file_path)
 
                 conn = get_alati_db_connection()
                 cursor = conn.cursor()
                 cursor.execute('DELETE FROM ALATI')
                 
                 ukupno_ucitano = 0
-                lines = text.split('\n')
-                for line in lines:
-                    line_clean = line.strip()
-                    if not line_clean:
-                        continue
-                        
-                    line_lower = line_clean.lower()
-                    if any(kw in line_lower for kw in ['sati', 'minuta', 'strana', 'ispis', 'stanje izlaznog', 'pk praezision', 'sarajevska', 'korisnik', 'datum', 'šifra alata', 'broj ladice']):
-                        continue
+                for _, row in df.iterrows():
+                    # Očekujemo kolone: Broj Ladice, Šifra alata, Naziv alata, Geometrija, Količina
+                    broj_ladice = str(row.iloc[0]) if pd.notna(row.iloc[0]) else ""
+                    sifra_alata = str(row.iloc[1]) if pd.notna(row.iloc[1]) else ""
+                    naziv_alata = str(row.iloc[2]) if pd.notna(row.iloc[2]) else ""
+                    geometrija  = str(row.iloc[3]) if len(row) > 4 and pd.notna(row.iloc[3]) else ""
+                    
+                    # Količina je obično predzadnja ili zadnja kolona
+                    try:
+                        kolicina = int(row.iloc[-1]) if pd.notna(row.iloc[-1]) else 0
+                    except ValueError:
+                        kolicina = 0
 
-                    parts = line_clean.split()
-                    if len(parts) >= 3:
-                        kolicina_str = parts[-1]
-                        try:
-                            kol_num = int(kolicina_str)
-                        except ValueError:
-                            continue 
-                        
-                        if len(parts) >= 4 and parts[0] == "SPM":
-                            broj_ladice = f"{parts[0]} {parts[1]} {parts[2]}"
-                            sredina = parts[3:-1]
-                        else:
-                            broj_ladice = parts[0]
-                            sredina = parts[1:-1]
-                        
-                        sifra_alata = sredina[0] if len(sredina) > 0 else ""
-                        idx = 1
-                        if len(sredina) > 1 and sredina[1].startswith("("):
-                            sifra_alata += " " + sredina[1]
-                            idx = 2
-                            
-                        ostalo_tekst = " ".join(sredina[idx:])
-                        naziv_alata = ostalo_tekst
-                        geometrija = ""
-                        
-                        cursor.execute('INSERT INTO ALATI (BROJ_LADICE, SIFRA_ALATA, NAZIV_ALATA, GEOMETRIJA, KOLICINA) VALUES (?, ?, ?, ?, ?)',
-                                       (broj_ladice, sifra_alata, naziv_alata, geometrija, kol_num))
-                        ukupno_ucitano += 1
+                    cursor.execute('''
+                        INSERT INTO ALATI (BROJ_LADICE, SIFRA_ALATA, NAZIV_ALATA, GEOMETRIJA, KOLICINA) 
+                        VALUES (?, ?, ?, ?, ?)
+                    ''', (broj_ladice, sifra_alata, naziv_alata, geometrija, kolicina))
+                    ukupno_ucitano += 1
                         
                 conn.commit()
                 conn.close()
-                poruka = f"Uspješno učitano i obrađeno {ukupno_ucitano} stavki alata iz RTF-a!"
+                poruka = f"Uspješno učitano i tačno raspoređeno {ukupno_ucitano} stavki iz Excel/CSV fajla!"
             except Exception as e:
-                poruka = f"Greška pri čitanju RTF-a: {str(e)}"
+                poruka = f"Greška pri obradi Excel fajla: {str(e)}"
         else:
-            poruka = "Molimo izaberite ispravan .rtf fajl!"
+            poruka = "Molimo izaberite ispravan Excel (.xlsx) ili CSV fajl!"
     
     conn = get_user_db_connection()
     cursor = conn.cursor()
@@ -333,11 +310,11 @@ HTML_ADMIN = '<doctype html><html>' + HTML_HEAD + '<body>' \
 '<h2>🛠️ Admin Panel</h2>' \
 '{% if poruka %}<div class="ok">{{ poruka }}</div>{% endif %}' \
 '<div class="box" style="border: 2px dashed #007aff; padding: 20px; text-align: center; max-width: 100%; box-sizing: border-box;">' \
-'<h3 style="margin-top:0;">📤 Učitavanje RTF izvještaja alata</h3>' \
-'<p style="font-size:13px; color:#8e8e93;">Izaberite RTF izvještaj iz vašeg sistema:</p>' \
+'<h3 style="margin-top:0;">📤 Učitavanje Excel / CSV baze alata</h3>' \
+'<p style="font-size:13px; color:#8e8e93;">Izaberite Excel (.xlsx) ili CSV fajl sa stanjem alata:</p>' \
 '<form method="POST" enctype="multipart/form-data">' \
-'<input type="file" name="rtf_file" accept=".rtf" required>' \
-'<button type="submit" style="background:#34c759;">Učitaj RTF bazu</button>' \
+'<input type="file" name="excel_file" accept=".xlsx, .xls, .csv" required>' \
+'<button type="submit" style="background:#34c759;">Učitaj Excel bazu</button>' \
 '</form>' \
 '</div>' \
 '<h3 style="margin-top:25px;">👥 Odobrenje korisnika</h3>' \
