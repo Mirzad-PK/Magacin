@@ -6,6 +6,9 @@
     <title>Pretraga i prikaz dokumenta alata</title>
     <!-- Biblioteka za čitanje Excel datoteka -->
     <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
+    <!-- Biblioteka za čitanje PDF datoteka -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
     <style>
         * {
             box-sizing: border-box;
@@ -148,8 +151,8 @@
 
     <div class="controls">
         <label class="file-upload-btn">
-            Učitaj Excel / CSV datoteku
-            <input type="file" id="fileInput" accept=".xlsx, .xls, .csv">
+            Učitaj Excel, CSV ili PDF
+            <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .pdf">
         </label>
 
         <div class="search-box">
@@ -157,7 +160,7 @@
         </div>
     </div>
 
-    <div class="status-info" id="statusInfo">Molimo učitajte Excel ili CSV dokument.</div>
+    <div class="status-info" id="statusInfo">Molimo učitajte Excel, CSV ili PDF dokument.</div>
 
     <div class="table-container">
         <div id="tableOutput" class="no-data">Dokument još nije učitan.</div>
@@ -165,6 +168,8 @@
 </div>
 
 <script>
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
     let rawData = [];
     let headers = [];
 
@@ -177,17 +182,23 @@
         const file = e.target.files[0];
         if (!file) return;
 
-        const reader = new FileReader();
+        statusInfo.textContent = `Učitavam dokument: "${file.name}"...`;
 
+        if (file.name.toLowerCase().endsWith('.pdf')) {
+            processPDF(file);
+        } else {
+            processExcelOrCSV(file);
+        }
+    });
+
+    // Obrada Excel/CSV datoteka
+    function processExcelOrCSV(file) {
+        const reader = new FileReader();
         reader.onload = function (event) {
             const data = new Uint8Array(event.target.result);
             const workbook = XLSX.read(data, { type: 'array' });
-
-            // Uzmi prvi radni list (Sheet)
             const firstSheetName = workbook.SheetNames[0];
             const worksheet = workbook.Sheets[firstSheetName];
-
-            // Pretvori u JSON strukturu
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
             if (jsonData.length > 0) {
@@ -202,9 +213,56 @@
                 tableOutput.innerHTML = '<div class="no-data">Dokument je prazan.</div>';
             }
         };
-
         reader.readAsArrayBuffer(file);
-    });
+    }
+
+    // Obrada PDF datoteka
+    function processPDF(file) {
+        const reader = new FileReader();
+        reader.onload = function (event) {
+            const typedarray = new Uint8Array(event.target.result);
+
+            pdfjsLib.getDocument(typedarray).promise.then(async function (pdf) {
+                headers = ["Stranica", "Sadržaj linije / Tekst"];
+                rawData = [];
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const textContent = await page.getTextContent();
+                    
+                    // Grupiranje teksta po linijama (na temelju Y-koordinate)
+                    let linesMap = {};
+                    textContent.items.forEach(item => {
+                        let y = Math.round(item.transform[5]);
+                        if (!linesMap[y]) linesMap[y] = [];
+                        linesMap[y].push(item.str);
+                    });
+
+                    // Sortiranje linija od vrha prema dnu
+                    let sortedY = Object.keys(linesMap).sort((a, b) => b - a);
+                    sortedY.forEach(y => {
+                        let lineText = linesMap[y].join(' ').trim();
+                        if (lineText.length > 0) {
+                            rawData.push([`Stranica ${i}`, lineText]);
+                        }
+                    });
+                }
+
+                if (rawData.length > 0) {
+                    searchInput.disabled = false;
+                    searchInput.value = '';
+                    statusInfo.textContent = `Učitan PDF: "${file.name}" — Ukupno linija teksta: ${rawData.length}`;
+                    renderTable(rawData);
+                } else {
+                    tableOutput.innerHTML = '<div class="no-data">Nije moguće izvući tekst iz ovog PDF-a.</div>';
+                }
+            }).catch(function (error) {
+                statusInfo.textContent = "Greška pri otvaranju PDF dokumenta.";
+                tableOutput.innerHTML = '<div class="no-data">Greška pri čitanju PDF-a.</div>';
+            });
+        };
+        reader.readAsArrayBuffer(file);
+    }
 
     searchInput.addEventListener('input', function () {
         const query = this.value.trim().toLowerCase();
@@ -215,7 +273,6 @@
             return;
         }
 
-        // Filtriranje redova po pretrazi
         const filteredData = rawData.filter(row => {
             return row.some(cell => {
                 return cell !== null && cell !== undefined && cell.toString().toLowerCase().includes(query);
@@ -233,38 +290,4 @@
         }
 
         let html = '<table><thead><tr>';
-        
-        // Generiranje zaglavlja
         headers.forEach(header => {
-            html += `<th>${header !== undefined ? header : ''}</th>`;
-        });
-        html += '</tr></thead><tbody>';
-
-        // Generiranje redova
-        data.forEach(row => {
-            html += '<tr>';
-            for (let i = 0; i < headers.length; i++) {
-                let cellValue = row[i] !== undefined && row[i] !== null ? row[i].toString() : '';
-                
-                // Označavanje traženog teksta
-                if (highlightQuery && cellValue.toLowerCase().includes(highlightQuery)) {
-                    const regex = new RegExp(`(${escapeRegExp(highlightQuery)})`, 'gi');
-                    cellValue = cellValue.replace(regex, '<mark>$1</mark>');
-                }
-
-                html += `<td>${cellValue}</td>`;
-            }
-            html += '</tr>';
-        });
-
-        html += 'tbody></table>';
-        tableOutput.innerHTML = html;
-    }
-
-    function escapeRegExp(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }
-</script>
-
-</body>
-</html>
