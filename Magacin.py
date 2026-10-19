@@ -191,7 +191,6 @@
         }
     });
 
-    // Obrada Excel/CSV datoteka
     function processExcelOrCSV(file) {
         const reader = new FileReader();
         reader.onload = function (event) {
@@ -216,7 +215,6 @@
         reader.readAsArrayBuffer(file);
     }
 
-    // Obrada PDF datoteka
     function processPDF(file) {
         const reader = new FileReader();
         reader.onload = function (event) {
@@ -230,7 +228,6 @@
                     const page = await pdf.getPage(i);
                     const textContent = await page.getTextContent();
                     
-                    // Grupiranje teksta po linijama (na temelju Y-koordinate)
                     let linesMap = {};
                     textContent.items.forEach(item => {
                         let y = Math.round(item.transform[5]);
@@ -238,7 +235,6 @@
                         linesMap[y].push(item.str);
                     });
 
-                    // Sortiranje linija od vrha prema dnu
                     let sortedY = Object.keys(linesMap).sort((a, b) => b - a);
                     sortedY.forEach(y => {
                         let lineText = linesMap[y].join(' ').trim();
@@ -291,3 +287,33 @@
 
         let html = '<table><thead><tr>';
         headers.forEach(header => {
+            html += `<th>${header !== undefined ? header : ''}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+
+        data.forEach(row => {
+            html += '<tr>';
+            for (let i = 0; i < headers.length; i++) {
+                let cellValue = row[i] !== undefined && row[i] !== null ? row[i].toString() : '';
+                
+                if (highlightQuery && cellValue.toLowerCase().includes(highlightQuery)) {
+                    const regex = new RegExp(`(${escapeRegExp(highlightQuery)})`, 'gi');
+                    cellValue = cellValue.replace(regex, '<mark>$1</mark>');
+                }
+
+                html += `<td>${cellValue}</td>`;
+            }
+            html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        tableOutput.innerHTML = html;
+    }
+
+    function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+</script>
+
+</body>
+</html>
