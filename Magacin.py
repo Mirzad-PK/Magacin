@@ -162,34 +162,27 @@ def admin():
                         lines = text.split('\n')
                         for line in lines:
                             parts = line.split()
-                            # Redovi počinju sa SPM ili oznakom ladice i završavaju brojem količine
                             if len(parts) >= 3:
                                 kolicina_str = parts[-1]
                                 try:
                                     kol_num = int(kolicina_str)
                                 except ValueError:
-                                    continue # Preskačemo zaglavlje tabele ("Broj Latice", "Kolicina"...)
+                                    continue 
                                 
-                                # Primjer linije: SPM - LAD 59 TP 121-4.2-M-C (Ap70) Burgija TPSB-2 HM...
                                 if parts[0] == "SPM" and len(parts) >= 4:
-                                    broj_ladice = f"{parts[0]} {parts[1]} {parts[2]}" # SPM - LAD
+                                    broj_ladice = f"{parts[0]} {parts[1]} {parts[2]}"
                                     ostalo = parts[3:-1]
                                 else:
                                     broj_ladice = parts[0]
                                     ostalo = parts[1:-1]
                                 
-                                # Razdvajanje šifre, naziva i geometrije
                                 sifra_alata = ostalo[0] if len(ostalo) > 0 else ""
-                                
-                                # Ako šifra sadrži dodatne detalje u zagradi (npr. (Ap70))
                                 idx_ostalo = 1
                                 if len(ostalo) > 1 and ostalo[1].startswith("("):
                                     sifra_alata += " " + ostalo[1]
                                     idx_ostalo = 2
                                     
                                 spojeno_ostalo = " ".join(ostalo[idx_ostalo:])
-                                
-                                # Naziv i geometrija
                                 naziv_alata = spojeno_ostalo
                                 geometrija = ""
                                 
@@ -232,8 +225,7 @@ def blokiraj(user_id):
         conn.close()
     return redirect(url_for('admin'))
 
-HTML_HEAD = '''
-<head>
+HTML_HEAD = '''<head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
     <meta name="apple-mobile-web-app-capable" content="yes">
@@ -252,8 +244,6 @@ HTML_HEAD = '''
         .search-container { background: white; padding: 12px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
         .search-row { display: flex; gap: 8px; }
         .search-col { flex: 1; }
-        
-        /* Tabela identična slici iz programa */
         .table-responsive { overflow-x: auto; background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
         table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
         th, td { padding: 8px 12px; border-bottom: 1px solid #e5e5ea; }
@@ -261,77 +251,98 @@ HTML_HEAD = '''
         tr:hover { background-color: #f2f2f7; }
         .txt-code { font-family: monospace; font-size: 12px; }
     </style>
-</head>
-'''
+</head>'''
 
 HTML_LOGIN = '<doctype html><html>' + HTML_HEAD + '<body><div class="box"><h2>🔑 Prijava</h2>{% if poruka %}<div class="err">{{ poruka }}</div>{% endif %}<form method="POST"><input type="text" name="username" placeholder="Korisničko ime" required><input type="password" name="password" placeholder="Lozinka" required><button type="submit">Prijavi se</button></form><p style="text-align:center; font-size:14px; margin-top:15px;"><a href="/register" style="color:#007aff; text-decoration:none;">Registracija</a></p></div></body></html>'
 
 HTML_REGISTER = '<doctype html><html>' + HTML_HEAD + '<body><div class="box"><h2>📝 Registracija</h2>{% if poruka %}<div class="err">{{ poruka }}</div>{% endif %}{% if uspjeh %}<div class="ok">{{ uspjeh }}</div>{% endif %}<form method="POST"><input type="text" name="username" placeholder="Korisničko ime" required><input type="password" name="password" placeholder="Lozinka" required><button type="submit" style="background:#34c759;">Registruj se</button></form><p style="text-align:center; font-size:14px; margin-top:15px;"><a href="/login" style="color:#007aff; text-decoration:none;">Nazad na prijavu</a></p></div></body></html>'
 
-HTML_INDEX = '<doctype html><html>' + HTML_HEAD + '''<body>
-<div class="top">
-    <span>👤 <strong>{{ username }}</strong></span>
-    <div>
-        {% if is_admin == 1 %}<a href="/admin" class="btn-nav" style="background:#fff9c4; color:#f57f17;">Admin Panel</a>{% endif %}
-        <a href="/logout" class="btn-nav">Odjava</a>
-    </div>
-</div>
+HTML_INDEX = '<doctype html><html>' + HTML_HEAD + '<body>' \
+'<div class="top">' \
+'<span>👤 <strong>{{ username }}</strong></span>' \
+'<div>' \
+'{% if is_admin == 1 %}<a href="/admin" class="btn-nav" style="background:#fff9c4; color:#f57f17;">Admin Panel</a>{% endif %}' \
+'<a href="/logout" class="btn-nav">Odjava</a>' \
+'</div>' \
+'</div>' \
+'<h2>🔧 Stanje Alata</h2>' \
+'{% if greska %}<div class="err">{{ greska }}</div>{% endif %}' \
+'<div class="search-container">' \
+'<form method="GET">' \
+'<div class="search-row">' \
+'<div class="search-col">' \
+'<label style="font-size:11px; color:#8e8e93; font-weight:600;">Broj ladice / Šifra:</label>' \
+'<input type="text" name="sifra" placeholder="npr. LAD 59 ili TP 121..." value="{{ sifra_pretraga }}">' \
+'</div>' \
+'<div class="search-col">' \
+'<label style="font-size:11px; color:#8e8e93; font-weight:600;">Naziv / Pojam:</label>' \
+'<input type="text" name="naziv" placeholder="npr. Burgija..." value="{{ naziv_pretraga }}">' \
+'</div>' \
+'</div>' \
+'<button type="submit" style="margin-top:6px;">Pretraži</button>' \
+'</form>' \
+'</div>' \
+'<div class="table-responsive">' \
+'<table>' \
+'<thead>' \
+'<tr>' \
+'<th>Broj Ladice</th>' \
+'<th>Šifra alata</th>' \
+'<th>Naziv alata</th>' \
+'<th>Geometrija</th>' \
+'<th style="text-align:right;">Količina</th>' \
+'</tr>' \
+'</thead>' \
+'<tbody>' \
+'{% for alat in alati %}' \
+'<tr>' \
+'<td><strong>{{ alat[0] }}</strong></td>' \
+'<td class="txt-code">{{ alat[1] }}</td>' \
+'<td>{{ alat[2] }}</td>' \
+'<td>{{ alat[3] }}</td>' \
+'<td style="text-align:right;"><strong>{{ alat[4] }}</strong></td>' \
+'</tr>' \
+'{% else %}' \
+'<tr>' \
+'<td colspan="5" style="text-align:center; color:#8e8e93; padding:20px;">Nema pronađenih alata.</td>' \
+'</tr>' \
+'{% endfor %}' \
+'</tbody>' \
+'</table>' \
+'</div>' \
+'</body></html>'
 
-<h2>🔧 Stanje Alata</h2>
-{% if greska %}<div class="err">{{ greska }}</div>{% endif %}
+HTML_ADMIN = '<doctype html><html>' + HTML_HEAD + '<body>' \
+'<a href="/" style="color:#007aff; text-decoration:none; display:inline-block; margin-bottom:15px;">← Nazad na magacin</a>' \
+'<h2>🛠️ Admin Panel</h2>' \
+'{% if poruka %}<div class="ok">{{ poruka }}</div>{% endif %}' \
+'<div class="box" style="border: 2px dashed #007aff; padding: 20px; text-align: center; max-width: 100%; box-sizing: border-box;">' \
+'<h3 style="margin-top:0;">📤 Učitavanje PDF izvještaja alata</h3>' \
+'<p style="font-size:13px; color:#8e8e93;">Izaberite PDF izvještaj iz vašeg programa:</p>' \
+'<form method="POST" enctype="multipart/form-data">' \
+'<input type="file" name="pdf_file" accept=".pdf" required>' \
+'<button type="submit" style="background:#34c759;">Učitaj PDF bazu</button>' \
+'</form>' \
+'</div>' \
+'<h3 style="margin-top:25px;">👥 Odobrenje korisnika</h3>' \
+'{% for u in users %}' \
+'<div style="background:white; padding:12px; border-radius:8px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">' \
+'<div>' \
+'<strong>{{ u[1] }}</strong><br>' \
+'<small style="color:#8e8e93;">Status: {% if u[2] == 1 %}<span style="color:#34c759;">Odobren</span>{% else %}<span style="color:#ff3b30;">Na čekanju</span>{% endif %}</small>' \
+'</div>' \
+'<div>' \
+'{% if u[2] == 0 %}' \
+'<a href="/admin/odobri/{{ u[0] }}" class="btn-nav" style="background:#34c759; color:white;">Odobri</a>' \
+'{% else %}' \
+'<a href="/admin/blokiraj/{{ u[0] }}" class="btn-nav" style="background:#ff3b30; color:white;">Blokiraj</a>' \
+'{% endif %}' \
+'</div>' \
+'</div>' \
+'{% else %}' \
+'<p style="color:#8e8e93;">Nema registrovanih radnika.</p>' \
+'{% endfor %}' \
+'</body></html>'
 
-<div class="search-container">
-    <form method="GET">
-        <div class="search-row">
-            <div class="search-col">
-                <label style="font-size:11px; color:#8e8e93; font-weight:600;">Broj ladice / Šifra:</label>
-                <input type="text" name="sifra" placeholder="npr. LAD 59 ili TP 121..." value="{{ sifra_pretraga }}">
-            </div>
-            <div class="search-col">
-                <label style="font-size:11px; color:#8e8e93; font-weight:600;">Naziv / Pojam:</label>
-                <input type="text" name="naziv" placeholder="npr. Burgija..." value="{{ naziv_pretraga }}">
-            </div>
-        </div>
-        <button type="submit" style="margin-top:6px;">Pretraži</button>
-    </form>
-</div>
-
-<div class="table-responsive">
-    <table>
-        <thead>
-            <tr>
-                <th>Broj Ladice</th>
-                <th>Šifra alata</th>
-                <th>Naziv alata</th>
-                <th>Geometrija</th>
-                <th style="text-align:right;">Količina</th>
-            </tr>
-        </thead>
-        <tbody>
-            {% for alat in alati %}
-            <tr>
-                <td><strong>{{ alat[0] }}</strong></td>
-                <td class="txt-code">{{ alat[1] }}</td>
-                <td>{{ alat[2] }}</td>
-                <td>{{ alat[3] }}</td>
-                <td style="text-align:right;"><strong>{{ alat[4] }}</strong></td>
-            </tr>
-            {% else %}
-            <tr>
-                <td colspan="5" style="text-align:center; color:#8e8e93; padding:20px;">Nema pronađenih alata.</td>
-            </tr>
-            {% endfor %}
-        </tbody>
-    </table>
-</div>
-</body></html>'''
-
-HTML_ADMIN = '<doctype html><html>' + HTML_HEAD + '''<body>
-<a href="/" style="color:#007aff; text-decoration:none; display:inline-block; margin-bottom:15px;">← Nazad na magacin</a>
-<h2>🛠️ Admin Panel</h2>
-
-{% if poruka %}<div class="ok">{{ poruka }}</div>{% endif %}
-
-<div class="box" style="border: 2px dashed #007aff; padding: 20px; text-align: center; max-width: 100%; box-sizing: border-box;">
-    <h3 style="margin-top:0;">📤 Učitavanje PDF izvještaja alata</h3>
-    <p style="font-size:13px; color:#8e8e93;">Izaberite PDF izvještaj iz vašeg programa
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000, debug=True)
