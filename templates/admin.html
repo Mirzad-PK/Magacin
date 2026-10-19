@@ -187,72 +187,72 @@
                 for (let i = 1; i <= pdf.numPages; i++) {
                     const page = await pdf.getPage(i);
                     const textContent = await page.getTextContent();
-                    const viewport = page.getViewport({ scale: 1.0 });
-                    const pageWidth = viewport.width;
                     
+                    let lines = [];
                     let linesMap = {};
+
                     textContent.items.forEach(item => {
                         let y = Math.round(item.transform[5]);
-                        let x = item.transform[4];
                         if (!linesMap[y]) linesMap[y] = [];
-                        linesMap[y].push({ text: item.str, x: x });
+                        linesMap[y].push({ text: item.str, x: item.transform[4] });
                     });
 
                     let sortedY = Object.keys(linesMap).sort((a, b) => b - a);
                     sortedY.forEach(y => {
-                        let items = linesMap[y].sort((a, b) => a.x - b.x);
-                        if (items.length === 0) return;
-
-                        let fullText = items.map(it => it.text).join(' ').trim();
-                        if (fullText.length === 0) return;
-
-                        // Ako linija sadrži tablične dijelove na temelju x koordinate
-                        let mainTextParts = [];
-                        let ladicaParts = [];
-                        let komadaParts = [];
-
-                        items.forEach(it => {
-                            let str = it.text.trim();
-                            if (!str) return;
-
-                            // Ako se stavka nalazi pri desnom dijelu stranice (gdje su obično stupci za Ladicu i Komade)
-                            let relX = it.x / pageWidth;
-
-                            if (relX > 0.85) {
-                                komadaParts.push(str);
-                            } else if (relX > 0.65) {
-                                ladicaParts.push(str);
-                            } else {
-                                mainTextParts.push(str);
-                            }
-                        });
-
-                        let mainStr = mainTextParts.join(' ').trim() || fullText;
-                        let ladicaStr = ladicaParts.join(' ').trim();
-                        let komadaStr = komadaParts.join(' ').trim();
-
-                        // Rezervno prepoznavanje u slučaju da x-položaj varira
-                        if (!ladicaStr) {
-                            let lMatch = fullText.match(/\b([0-9]{1,2}\-[0-9]{1,2}\.?|[0-9]{1,2}\.|[1-9]\s*-\s*BOČNA\s*LADICA|V[0-9]+)\b/i);
-                            if (lMatch) {
-                                ladicaStr = lMatch[1];
-                            } else {
-                                ladicaStr = "-";
-                            }
-                        }
-
-                        if (!komadaStr) {
-                            komadaStr = "-";
-                        }
-
-                        rawData.push([`Stranica ${i}`, mainStr, ladicaStr, komadaStr]);
+                        let sortedItems = linesMap[y].sort((a, b) => a.x - b.x);
+                        let lineStr = sortedItems.map(it => it.text).join(' ').trim();
+                        if (lineStr) lines.push(lineStr);
                     });
+
+                    // Ignoriraj zaglavlja i opće informacije
+                    let currentAlat = "";
+                    let currentLadica = "-";
+                    let currentKomada = "-";
+
+                    for (let j = 0; j < lines.length; j++) {
+                        let line = lines[j].trim();
+                        if (!line) continue;
+
+                        // Preskoči sistemske linije zaglavlja
+                        if (/STANJE IZLAZNOG|Datum ispisa|Mirzad Mutapcic|Naziv alata|Ladica Kolicina|\d{2}\.\d{2}\.\d{4}/i.test(line)) {
+                            continue;
+                        }
+
+                        // Ako je linija količina (npr. "x 90", "x 5", "5 kom")
+                        if (/^x\s*\d+|\d+\s*kom/i.test(line)) {
+                            currentKomada = line;
+                            if (currentAlat) {
+                                rawData.push([`Stranica ${i}`, currentAlat, currentLadica, currentKomada]);
+                                currentAlat = "";
+                                currentLadica = "-";
+                                currentKomada = "-";
+                            }
+                        }
+                        // Ako je linija oznaka ladice (npr. "1.", "1-2.", "1. 2", "V1", "1 - BOČNA LADICA")
+                        else if (/^(\d{1,2}\.?\s*\d?|\d{1,2}-\d{1,2}\.?|V\d+|\d+\s*-\s*BOČNA\s*LADICA)$/i.test(line)) {
+                            currentLadica = line;
+                        }
+                        // Inače je to naziv alata
+                        else {
+                            if (currentAlat) {
+                                // Spremi prethodni alat ako nije imala količinu
+                                rawData.push([`Stranica ${i}`, currentAlat, currentLadica, currentKomada]);
+                                currentLadica = "-";
+                                currentKomada = "-";
+                            }
+                            currentAlat = line;
+                        }
+                    }
+
+                    if (currentAlat) {
+                        rawData.push([`Stranica ${i}`, currentAlat, currentLadica, currentKomada]);
+                    }
                 }
 
                 if (rawData.length > 0) {
                     searchInput.disabled = false;
                     searchInput.value = '';
-                    statusInfo.textContent = `Učitan PDF: "${file.name}" — Ukupno linija teksta: ${rawData.length}`;
+                    statusInfo.textContent = `Učitan PDF: "${file.name}" — Ukupno alata: ${rawData.length}`;
                     renderTable(rawData);
                 } else {
                     tableOutput.innerHTML = '<div class="no-data">Nije moguće izvući tekst iz ovog PDF-a.</div>';
@@ -350,26 +350,3 @@
                             <td>${actionBtn}</td>
                         </tr>
                     `;
-                });
-            });
-    }
-
-    function toggleUser(username) {
-        fetch('/api/users/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: username })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                loadUsers();
-            } else {
-                alert(data.error || 'Greška pri promjeni statusa!');
-            }
-        });
-    }
-</script>
-
-</body>
-</html>
