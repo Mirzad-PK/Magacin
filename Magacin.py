@@ -1,7 +1,7 @@
 from flask import Flask, render_template_string, request, redirect, url_for, session
 import sqlite3
 import os
-import pandas as pd
+import openpyxl
 
 app = Flask(__name__)
 app.secret_key = 'tajni_kljuc_za_sigurnost_app_123'
@@ -147,32 +147,31 @@ def admin():
     poruka = None
     if request.method == 'POST' and 'excel_file' in request.files:
         file = request.files['excel_file']
-        if file and (file.filename.endswith('.xlsx') or file.filename.endswith('.xls') or file.filename.endswith('.csv')):
-            file_path = os.path.join(BASE_DIR, 'temp_file')
+        if file and file.filename.endswith('.xlsx'):
+            file_path = os.path.join(BASE_DIR, 'temp.xlsx')
             file.save(file_path)
             
             try:
-                # Čitanje Excel ili CSV fajla preko Pandasa (garantuje tačan raspored kolona)
-                if file.filename.endswith('.csv'):
-                    df = pd.read_csv(file_path)
-                else:
-                    df = pd.read_excel(file_path)
+                wb = openpyxl.load_workbook(file_path)
+                sheet = wb.active
 
                 conn = get_alati_db_connection()
                 cursor = conn.cursor()
                 cursor.execute('DELETE FROM ALATI')
                 
                 ukupno_ucitano = 0
-                for _, row in df.iterrows():
-                    # Očekujemo kolone: Broj Ladice, Šifra alata, Naziv alata, Geometrija, Količina
-                    broj_ladice = str(row.iloc[0]) if pd.notna(row.iloc[0]) else ""
-                    sifra_alata = str(row.iloc[1]) if pd.notna(row.iloc[1]) else ""
-                    naziv_alata = str(row.iloc[2]) if pd.notna(row.iloc[2]) else ""
-                    geometrija  = str(row.iloc[3]) if len(row) > 4 and pd.notna(row.iloc[3]) else ""
+                # Preskačemo prvi red ako je zaglavlje, krećemo od 2. reda
+                for row in sheet.iter_rows(min_row=2, values_only=True):
+                    if not row or all(cell is None for cell in row):
+                        continue
+                        
+                    broj_ladice = str(row[0]) if row[0] is not None else ""
+                    sifra_alata = str(row[1]) if row[1] is not None else ""
+                    naziv_alata = str(row[2]) if row[2] is not None else ""
+                    geometrija  = str(row[3]) if len(row) > 4 and row[3] is not None else ""
                     
-                    # Količina je obično predzadnja ili zadnja kolona
                     try:
-                        kolicina = int(row.iloc[-1]) if pd.notna(row.iloc[-1]) else 0
+                        kolicina = int(row[-1]) if row[-1] is not None else 0
                     except ValueError:
                         kolicina = 0
 
@@ -184,11 +183,11 @@ def admin():
                         
                 conn.commit()
                 conn.close()
-                poruka = f"Uspješno učitano i tačno raspoređeno {ukupno_ucitano} stavki iz Excel/CSV fajla!"
+                poruka = f"Uspješno spremljeno u bazu i obrađeno {ukupno_ucitano} stavki alata!"
             except Exception as e:
                 poruka = f"Greška pri obradi Excel fajla: {str(e)}"
         else:
-            poruka = "Molimo izaberite ispravan Excel (.xlsx) ili CSV fajl!"
+            poruka = "Molimo izaberite ispravan Excel (.xlsx) fajl!"
     
     conn = get_user_db_connection()
     cursor = conn.cursor()
@@ -297,7 +296,7 @@ HTML_INDEX = '<doctype html><html>' + HTML_HEAD + '<body>' \
 '</tr>' \
 '{% else %}' \
 '<tr>' \
-'<td colspan="5" style="text-align:center; color:#8e8e93; padding:20px;">Nema pronađenih alata.</td>' \
+'<td colspan="5" style="text-align:center; color:#8e8e93; padding:20px;">Nema pronađenih alata. Traženi alat ne postoji ili baza nije učitana.</td>' \
 '</tr>' \
 '{% endfor %}' \
 '</tbody>' \
@@ -310,11 +309,11 @@ HTML_ADMIN = '<doctype html><html>' + HTML_HEAD + '<body>' \
 '<h2>🛠️ Admin Panel</h2>' \
 '{% if poruka %}<div class="ok">{{ poruka }}</div>{% endif %}' \
 '<div class="box" style="border: 2px dashed #007aff; padding: 20px; text-align: center; max-width: 100%; box-sizing: border-box;">' \
-'<h3 style="margin-top:0;">📤 Učitavanje Excel / CSV baze alata</h3>' \
-'<p style="font-size:13px; color:#8e8e93;">Izaberite Excel (.xlsx) ili CSV fajl sa stanjem alata:</p>' \
+'<h3 style="margin-top:0;">📤 Trajno učitavanje Excel baze</h3>' \
+'<p style="font-size:13px; color:#8e8e93;">Izaberite Excel (.xlsx) fajl. Podaci će se sačuvati u bazi i radnici će ih odmah pretraživati:</p>' \
 '<form method="POST" enctype="multipart/form-data">' \
-'<input type="file" name="excel_file" accept=".xlsx, .xls, .csv" required>' \
-'<button type="submit" style="background:#34c759;">Učitaj Excel bazu</button>' \
+'<input type="file" name="excel_file" accept=".xlsx" required>' \
+'<button type="submit" style="background:#34c759;">Sačuvaj u bazu magacina</button>' \
 '</form>' \
 '</div>' \
 '<h3 style="margin-top:25px;">👥 Odobrenje korisnika</h3>' \
