@@ -1,340 +1,270 @@
-from flask import Flask, render_template_string, request, redirect, url_for, session
-import sqlite3
-import os
-import openpyxl
-
-app = Flask(__name__)
-app.secret_key = 'tajni_kljuc_za_sigurnost_app_123'
-
-BASE_DIR = os.path.dirname(os.path.abspath(__file__))
-USER_DB_PATH = os.path.join(BASE_DIR, 'korisnici.db')
-ALATI_DB_PATH = os.path.join(BASE_DIR, 'baza_magacin.db')
-
-def get_user_db_connection():
-    return sqlite3.connect(USER_DB_PATH)
-
-def get_alati_db_connection():
-    return sqlite3.connect(ALATI_DB_PATH)
-
-def init_user_db():
-    conn = get_user_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id INTEGER PRIMARY KEY AUTOINCREMENT,
-            username TEXT UNIQUE NOT NULL,
-            password TEXT NOT NULL,
-            is_approved INTEGER DEFAULT 0,
-            is_admin INTEGER DEFAULT 0
-        )
-    ''')
-    cursor.execute('SELECT * FROM users WHERE username = ?', ('admin',))
-    if not cursor.fetchone():
-        cursor.execute('INSERT INTO users (username, password, is_approved, is_admin) VALUES (?, ?, 1, 1)',
-                       ('admin', 'admin123'))
-    conn.commit()
-    conn.close()
-
-def init_alati_db():
-    conn = get_alati_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('''
-        CREATE TABLE IF NOT EXISTS ALATI (
-            ID INTEGER PRIMARY KEY AUTOINCREMENT,
-            BROJ_LADICE TEXT,
-            SIFRA_ALATA TEXT,
-            NAZIV_ALATA TEXT,
-            GEOMETRIJA TEXT,
-            KOLICINA INTEGER DEFAULT 0
-        )
-    ''')
-    conn.commit()
-    conn.close()
-
-init_user_db()
-init_alati_db()
-
-@app.route('/')
-def index():
-    if 'user_id' not in session:
-        return redirect(url_for('login'))
-    
-    sifra_pretraga = request.args.get('sifra', '').strip()
-    naziv_pretraga = request.args.get('naziv', '').strip()
-    alati = []
-    greska = None
-
-    try:
-        con = get_alati_db_connection()
-        cur = con.cursor()
-        
-        sql = "SELECT BROJ_LADICE, SIFRA_ALATA, NAZIV_ALATA, GEOMETRIJA, KOLICINA FROM ALATI WHERE 1=1"
-        params = []
-        
-        if sifra_pretraga:
-            sql += " AND (UPPER(SIFRA_ALATA) LIKE UPPER(?) OR UPPER(BROJ_LADICE) LIKE UPPER(?))"
-            params.extend([f'%{sifra_pretraga}%', f'%{sifra_pretraga}%'])
-            
-        if naziv_pretraga:
-            sql += " AND (UPPER(NAZIV_ALATA) LIKE UPPER(?) OR UPPER(GEOMETRIJA) LIKE UPPER(?) OR UPPER(SIFRA_ALATA) LIKE UPPER(?))"
-            params.extend([f'%{naziv_pretraga}%', f'%{naziv_pretraga}%', f'%{naziv_pretraga}%'])
-            
-        cur.execute(sql, params)
-        alati = cur.fetchall()
-        con.close()
-    except Exception as e:
-        greska = f"Greška pri čitanju baze alata: {str(e)}"
-
-    return render_template_string(HTML_INDEX, alati=alati, sifra_pretraga=sifra_pretraga, naziv_pretraga=naziv_pretraga, greska=greska, username=session.get('username'), is_admin=session.get('is_admin'))
-
-@app.route('/login', methods=['GET', 'POST'])
-def login():
-    poruka = None
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        
-        conn = get_user_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('SELECT id, username, password, is_approved, is_admin FROM users WHERE username = ? AND password = ?', (username, password))
-        user = cursor.fetchone()
-        conn.close()
-        
-        if user:
-            if user[3] == 1:
-                session['user_id'] = user[0]
-                session['username'] = user[1]
-                session['is_admin'] = user[4]
-                return redirect(url_for('index'))
-            else:
-                poruka = "Vaš nalog čeka odobrenje administratora."
-        else:
-            poruka = "Pogrešno korisničko ime ili lozinka!"
-            
-    return render_template_string(HTML_LOGIN, poruka=poruka)
-
-@app.route('/register', methods=['GET', 'POST'])
-def register():
-    poruka = None
-    uspjeh = None
-    if request.method == 'POST':
-        username = request.form['username']
-        password = request.form['password']
-        
-        conn = get_user_db_connection()
-        cursor = conn.cursor()
-        try:
-            cursor.execute('INSERT INTO users (username, password, is_approved, is_admin) VALUES (?, ?, 0, 0)', (username, password))
-            conn.commit()
-            uspjeh = "Nalog uspješno kreiran! Pričekajte odobrenje administratora."
-        except sqlite3.IntegrityError:
-            poruka = "Korisničko ime je već zauzeto!"
-        finally:
-            conn.close()
-        
-    return render_template_string(HTML_REGISTER, poruka=poruka, uspjeh=uspjeh)
-
-@app.route('/logout')
-def logout():
-    session.clear()
-    return redirect(url_for('login'))
-
-@app.route('/admin', methods=['GET', 'POST'])
-def admin():
-    if 'user_id' not in session or session.get('is_admin') != 1:
-        return "Pristup odbijen!", 403
-    
-    poruka = None
-    if request.method == 'POST' and 'excel_file' in request.files:
-        file = request.files['excel_file']
-        if file and file.filename.endswith('.xlsx'):
-            file_path = os.path.join(BASE_DIR, 'temp.xlsx')
-            file.save(file_path)
-            
-            try:
-                wb = openpyxl.load_workbook(file_path)
-                sheet = wb.active
-
-                conn = get_alati_db_connection()
-                cursor = conn.cursor()
-                cursor.execute('DELETE FROM ALATI')
-                
-                ukupno_ucitano = 0
-                # Preskačemo prvi red ako je zaglavlje, krećemo od 2. reda
-                for row in sheet.iter_rows(min_row=2, values_only=True):
-                    if not row or all(cell is None for cell in row):
-                        continue
-                        
-                    broj_ladice = str(row[0]) if row[0] is not None else ""
-                    sifra_alata = str(row[1]) if row[1] is not None else ""
-                    naziv_alata = str(row[2]) if row[2] is not None else ""
-                    geometrija  = str(row[3]) if len(row) > 4 and row[3] is not None else ""
-                    
-                    try:
-                        kolicina = int(row[-1]) if row[-1] is not None else 0
-                    except ValueError:
-                        kolicina = 0
-
-                    cursor.execute('''
-                        INSERT INTO ALATI (BROJ_LADICE, SIFRA_ALATA, NAZIV_ALATA, GEOMETRIJA, KOLICINA) 
-                        VALUES (?, ?, ?, ?, ?)
-                    ''', (broj_ladice, sifra_alata, naziv_alata, geometrija, kolicina))
-                    ukupno_ucitano += 1
-                        
-                conn.commit()
-                conn.close()
-                poruka = f"Uspješno spremljeno u bazu i obrađeno {ukupno_ucitano} stavki alata!"
-            except Exception as e:
-                poruka = f"Greška pri obradi Excel fajla: {str(e)}"
-        else:
-            poruka = "Molimo izaberite ispravan Excel (.xlsx) fajl!"
-    
-    conn = get_user_db_connection()
-    cursor = conn.cursor()
-    cursor.execute('SELECT id, username, is_approved FROM users WHERE is_admin = 0')
-    users = cursor.fetchall()
-    conn.close()
-    
-    return render_template_string(HTML_ADMIN, users=users, poruka=poruka)
-
-@app.route('/admin/odobri/<int:user_id>')
-def odobri(user_id):
-    if session.get('is_admin') == 1:
-        conn = get_user_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('UPDATE users SET is_approved = 1 WHERE id = ?', (user_id,))
-        conn.commit()
-        conn.close()
-    return redirect(url_for('admin'))
-
-@app.route('/admin/blokiraj/<int:user_id>')
-def blokiraj(user_id):
-    if session.get('is_admin') == 1:
-        conn = get_user_db_connection()
-        cursor = conn.cursor()
-        cursor.execute('UPDATE users SET is_approved = 0 WHERE id = ?', (user_id,))
-        conn.commit()
-        conn.close()
-    return redirect(url_for('admin'))
-
-HTML_HEAD = '''<head>
-    <meta charset="utf-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1, user-scalable=no">
-    <meta name="apple-mobile-web-app-capable" content="yes">
-    <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
-    <meta name="apple-mobile-web-app-title" content="Magacin">
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Pretraga i prikaz dokumenta alata</title>
+    <!-- Biblioteka za čitanje Excel datoteka -->
+    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
     <style>
-        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif; margin: 0; padding: 15px; background: #f2f2f7; color: #1c1c1e; }
-        .box { background: white; padding: 20px; border-radius: 12px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); max-width: 350px; margin: 40px auto; }
-        h2 { text-align: center; margin-bottom: 20px; }
-        input[type="text"], input[type="password"], input[type="file"] { width: 100%; padding: 10px; margin: 4px 0 8px 0; border: 1px solid #c7c7cc; border-radius: 8px; box-sizing: border-box; font-size: 14px; }
-        button, input[type="submit"] { width: 100%; padding: 10px; background: #007aff; color: white; border: none; border-radius: 8px; font-weight: 600; font-size: 15px; cursor: pointer; margin-top: 5px; }
-        .top { display: flex; justify-content: space-between; align-items: center; margin-bottom: 15px; }
-        .btn-nav { font-size: 13px; padding: 6px 12px; background: #e5e5ea; text-decoration: none; color: #007aff; border-radius: 6px; font-weight: 500; }
-        .err { background: #ffe5e5; color: #ff3b30; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
-        .ok { background: #e5ffe5; color: #34c759; padding: 12px; border-radius: 8px; margin-bottom: 15px; font-size: 14px; }
-        .search-container { background: white; padding: 12px; border-radius: 12px; margin-bottom: 15px; box-shadow: 0 2px 8px rgba(0,0,0,0.05); }
-        .search-row { display: flex; gap: 8px; }
-        .search-col { flex: 1; }
-        .table-responsive { overflow-x: auto; background: white; border-radius: 8px; box-shadow: 0 1px 4px rgba(0,0,0,0.05); }
-        table { width: 100%; border-collapse: collapse; font-size: 13px; text-align: left; }
-        th, td { padding: 8px 12px; border-bottom: 1px solid #e5e5ea; }
-        th { background: #f8f8fa; font-weight: 600; color: #3a3a3c; }
-        tr:hover { background-color: #f2f2f7; }
-        .txt-code { font-family: monospace; font-size: 12px; }
+        * {
+            box-sizing: border-box;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        }
+
+        body {
+            background-color: #f4f7f6;
+            margin: 0;
+            padding: 20px;
+            color: #333;
+        }
+
+        .container {
+            max-width: 1100px;
+            margin: 0 auto;
+            background: #ffffff;
+            padding: 25px;
+            border-radius: 10px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.08);
+        }
+
+        h2 {
+            margin-top: 0;
+            color: #2c3e50;
+            border-bottom: 2px solid #eceff1;
+            padding-bottom: 10px;
+        }
+
+        .controls {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 15px;
+            margin-bottom: 20px;
+            align-items: center;
+        }
+
+        .file-upload-btn {
+            position: relative;
+            display: inline-block;
+            background-color: #3498db;
+            color: white;
+            padding: 10px 20px;
+            border-radius: 6px;
+            cursor: pointer;
+            font-weight: 600;
+            transition: background 0.2s;
+        }
+
+        .file-upload-btn:hover {
+            background-color: #2980b9;
+        }
+
+        .file-upload-btn input[type="file"] {
+            display: none;
+        }
+
+        .search-box {
+            flex: 1;
+            min-width: 250px;
+        }
+
+        .search-box input {
+            width: 100%;
+            padding: 10px 15px;
+            font-size: 16px;
+            border: 2px solid #cbd5e1;
+            border-radius: 6px;
+            outline: none;
+            transition: border-color 0.2s;
+        }
+
+        .search-box input:focus {
+            border-color: #3498db;
+        }
+
+        .status-info {
+            font-size: 14px;
+            color: #64748b;
+            margin-bottom: 10px;
+        }
+
+        .table-container {
+            overflow-x: auto;
+            max-height: 600px;
+            border: 1px solid #e2e8f0;
+            border-radius: 6px;
+        }
+
+        table {
+            width: 100%;
+            border-collapse: collapse;
+            background: white;
+            text-align: left;
+        }
+
+        th {
+            background-color: #2c3e50;
+            color: white;
+            padding: 12px 15px;
+            position: sticky;
+            top: 0;
+            z-index: 10;
+        }
+
+        td {
+            padding: 10px 15px;
+            border-bottom: 1px solid #e2e8f0;
+            font-size: 14px;
+        }
+
+        tr:nth-child(even) {
+            background-color: #f8fafc;
+        }
+
+        tr:hover {
+            background-color: #f1f5f9;
+        }
+
+        mark {
+            background-color: #fef08a;
+            color: #854d0e;
+            padding: 2px 4px;
+            border-radius: 3px;
+            font-weight: bold;
+        }
+
+        .no-data {
+            text-align: center;
+            padding: 40px;
+            color: #94a3b8;
+            font-style: italic;
+        }
     </style>
-</head>'''
+</head>
+<body>
 
-HTML_LOGIN = '<doctype html><html>' + HTML_HEAD + '<body><div class="box"><h2>🔑 Prijava</h2>{% if poruka %}<div class="err">{{ poruka }}</div>{% endif %}<form method="POST"><input type="text" name="username" placeholder="Korisničko ime" required><input type="password" name="password" placeholder="Lozinka" required><button type="submit">Prijavi se</button></form><p style="text-align:center; font-size:14px; margin-top:15px;"><a href="/register" style="color:#007aff; text-decoration:none;">Registracija</a></p></div></body></html>'
+<div class="container">
+    <h2>Pretraživanje i Prikaz Dokumenata Alata</h2>
 
-HTML_REGISTER = '<doctype html><html>' + HTML_HEAD + '<body><div class="box"><h2>📝 Registracija</h2>{% if poruka %}<div class="err">{{ poruka }}</div>{% endif %}{% if uspjeh %}<div class="ok">{{ uspjeh }}</div>{% endif %}<form method="POST"><input type="text" name="username" placeholder="Korisničko ime" required><input type="password" name="password" placeholder="Lozinka" required><button type="submit" style="background:#34c759;">Registruj se</button></form><p style="text-align:center; font-size:14px; margin-top:15px;"><a href="/login" style="color:#007aff; text-decoration:none;">Nazad na prijavu</a></p></div></body></html>'
+    <div class="controls">
+        <label class="file-upload-btn">
+            Učitaj Excel / CSV datoteku
+            <input type="file" id="fileInput" accept=".xlsx, .xls, .csv">
+        </label>
 
-HTML_INDEX = '<doctype html><html>' + HTML_HEAD + '<body>' \
-'<div class="top">' \
-'<span>👤 <strong>{{ username }}</strong></span>' \
-'<div>' \
-'{% if is_admin == 1 %}<a href="/admin" class="btn-nav" style="background:#fff9c4; color:#f57f17;">Admin Panel</a>{% endif %}' \
-'<a href="/logout" class="btn-nav">Odjava</a>' \
-'</div>' \
-'</div>' \
-'<h2>🔧 Stanje Alata - PK Praezision Technik</h2>' \
-'{% if greska %}<div class="err">{{ greska }}</div>{% endif %}' \
-'<div class="search-container">' \
-'<form method="GET">' \
-'<div class="search-row">' \
-'<div class="search-col">' \
-'<label style="font-size:11px; color:#8e8e93; font-weight:600;">Broj ladice / Šifra:</label>' \
-'<input type="text" name="sifra" placeholder="npr. R1 ili 1001..." value="{{ sifra_pretraga }}">' \
-'</div>' \
-'<div class="search-col">' \
-'<label style="font-size:11px; color:#8e8e93; font-weight:600;">Naziv / Pojam:</label>' \
-'<input type="text" name="naziv" placeholder="npr. Glodalo..." value="{{ naziv_pretraga }}">' \
-'</div>' \
-'</div>' \
-'<button type="submit" style="margin-top:6px;">Pretraži</button>' \
-'</form>' \
-'</div>' \
-'<div class="table-responsive">' \
-'<table>' \
-'<thead>' \
-'<tr>' \
-'<th>Broj Ladice</th>' \
-'<th>Šifra alata</th>' \
-'<th>Naziv alata</th>' \
-'<th>Geometrija</th>' \
-'<th style="text-align:right;">Količina</th>' \
-'</tr>' \
-'</thead>' \
-'<tbody>' \
-'{% for alat in alati %}' \
-'<tr>' \
-'<td><strong>{{ alat[0] }}</strong></td>' \
-'<td class="txt-code">{{ alat[1] }}</td>' \
-'<td>{{ alat[2] }}</td>' \
-'<td>{{ alat[3] }}</td>' \
-'<td style="text-align:right;"><strong>{{ alat[4] }}</strong></td>' \
-'</tr>' \
-'{% else %}' \
-'<tr>' \
-'<td colspan="5" style="text-align:center; color:#8e8e93; padding:20px;">Nema pronađenih alata. Traženi alat ne postoji ili baza nije učitana.</td>' \
-'</tr>' \
-'{% endfor %}' \
-'</tbody>' \
-'</table>' \
-'</div>' \
-'</body></html>'
+        <div class="search-box">
+            <input type="text" id="searchInput" placeholder="Unesite šifru alata, naziv ili ladicu (npr. tp 200-12.0-p)..." disabled>
+        </div>
+    </div>
 
-HTML_ADMIN = '<doctype html><html>' + HTML_HEAD + '<body>' \
-'<a href="/" style="color:#007aff; text-decoration:none; display:inline-block; margin-bottom:15px;">← Nazad na magacin</a>' \
-'<h2>🛠️ Admin Panel</h2>' \
-'{% if poruka %}<div class="ok">{{ poruka }}</div>{% endif %}' \
-'<div class="box" style="border: 2px dashed #007aff; padding: 20px; text-align: center; max-width: 100%; box-sizing: border-box;">' \
-'<h3 style="margin-top:0;">📤 Trajno učitavanje Excel baze</h3>' \
-'<p style="font-size:13px; color:#8e8e93;">Izaberite Excel (.xlsx) fajl. Podaci će se sačuvati u bazi i radnici će ih odmah pretraživati:</p>' \
-'<form method="POST" enctype="multipart/form-data">' \
-'<input type="file" name="excel_file" accept=".xlsx" required>' \
-'<button type="submit" style="background:#34c759;">Sačuvaj u bazu magacina</button>' \
-'</form>' \
-'</div>' \
-'<h3 style="margin-top:25px;">👥 Odobrenje korisnika</h3>' \
-'{% for u in users %}' \
-'<div style="background:white; padding:12px; border-radius:8px; margin-bottom:8px; display:flex; justify-content:space-between; align-items:center;">' \
-'<div>' \
-'<strong>{{ u[1] }}</strong><br>' \
-'<small style="color:#8e8e93;">Status: {% if u[2] == 1 %}<span style="color:#34c759;">Odobren</span>{% else %}<span style="color:#ff3b30;">Na čekanju</span>{% endif %}</small>' \
-'</div>' \
-'<div>' \
-'{% if u[2] == 0 %}' \
-'<a href="/admin/odobri/{{ u[0] }}" class="btn-nav" style="background:#34c759; color:white;">Odobri</a>' \
-'{% else %}' \
-'<a href="/admin/blokiraj/{{ u[0] }}" class="btn-nav" style="background:#ff3b30; color:white;">Blokiraj</a>' \
-'{% endif %}' \
-'</div>' \
-'</div>' \
-'{% else %}' \
-'<p style="color:#8e8e93;">Nema registrovanih radnika.</p>' \
-'{% endfor %}' \
-'</body></html>'
+    <div class="status-info" id="statusInfo">Molimo učitajte Excel ili CSV dokument.</div>
 
-if __name__ == '__main__':
-    app.run(host='0.0.0.0', port=5000, debug=True)
+    <div class="table-container">
+        <div id="tableOutput" class="no-data">Dokument još nije učitan.</div>
+    </div>
+</div>
+
+<script>
+    let rawData = [];
+    let headers = [];
+
+    const fileInput = document.getElementById('fileInput');
+    const searchInput = document.getElementById('searchInput');
+    const tableOutput = document.getElementById('tableOutput');
+    const statusInfo = document.getElementById('statusInfo');
+
+    fileInput.addEventListener('change', function (e) {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        const reader = new FileReader();
+
+        reader.onload = function (event) {
+            const data = new Uint8Array(event.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+
+            // Uzmi prvi radni list (Sheet)
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+
+            // Pretvori u JSON strukturu
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+            if (jsonData.length > 0) {
+                headers = jsonData[0];
+                rawData = jsonData.slice(1).filter(row => row.length > 0);
+
+                searchInput.disabled = false;
+                searchInput.value = '';
+                statusInfo.textContent = `Učitan dokument: "${file.name}" — Ukupno zapisa: ${rawData.length}`;
+                renderTable(rawData);
+            } else {
+                tableOutput.innerHTML = '<div class="no-data">Dokument je prazan.</div>';
+            }
+        };
+
+        reader.readAsArrayBuffer(file);
+    });
+
+    searchInput.addEventListener('input', function () {
+        const query = this.value.trim().toLowerCase();
+
+        if (!query) {
+            renderTable(rawData);
+            statusInfo.textContent = `Ukupno zapisa: ${rawData.length}`;
+            return;
+        }
+
+        // Filtriranje redova po pretrazi
+        const filteredData = rawData.filter(row => {
+            return row.some(cell => {
+                return cell !== null && cell !== undefined && cell.toString().toLowerCase().includes(query);
+            });
+        });
+
+        statusInfo.textContent = `Pronađeno zapisa: ${filteredData.length} od ukupno ${rawData.length}`;
+        renderTable(filteredData, query);
+    });
+
+    function renderTable(data, highlightQuery = '') {
+        if (data.length === 0) {
+            tableOutput.innerHTML = '<div class="no-data">Nema rezultata koji odgovaraju pretrazi.</div>';
+            return;
+        }
+
+        let html = '<table><thead><tr>';
+        
+        // Generiranje zaglavlja
+        headers.forEach(header => {
+            html += `<th>${header !== undefined ? header : ''}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+
+        // Generiranje redova
+        data.forEach(row => {
+            html += '<tr>';
+            for (let i = 0; i < headers.length; i++) {
+                let cellValue = row[i] !== undefined && row[i] !== null ? row[i].toString() : '';
+                
+                // Označavanje traženog teksta
+                if (highlightQuery && cellValue.toLowerCase().includes(highlightQuery)) {
+                    const regex = new RegExp(`(${escapeRegExp(highlightQuery)})`, 'gi');
+                    cellValue = cellValue.replace(regex, '<mark>$1</mark>');
+                }
+
+                html += `<td>${cellValue}</td>`;
+            }
+            html += '</tr>';
+        });
+
+        html += 'tbody></table>';
+        tableOutput.innerHTML = html;
+    }
+
+    function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+</script>
+
+</body>
+</html>
