@@ -59,8 +59,8 @@ def index():
     if 'user_id' not in session:
         return redirect(url_for('login'))
     
-    sifra_pretraga = request.args.get('sifra', '')
-    naziv_pretraga = request.args.get('naziv', '')
+    sifra_pretraga = request.args.get('sifra', '').strip()
+    naziv_pretraga = request.args.get('naziv', '').strip()
     alati = []
     greska = None
 
@@ -72,12 +72,12 @@ def index():
         params = []
         
         if sifra_pretraga:
-            sql += " AND (UPPER(SIFRA) LIKE UPPER(?) OR UPPER(NAZIV) LIKE UPPER(?) OR UPPER(LADICA) LIKE UPPER(?))"
-            params.extend([f'%{sifra_pretraga}%', f'%{sifra_pretraga}%', f'%{sifra_pretraga}%'])
+            sql += " AND (UPPER(SIFRA) LIKE UPPER(?) OR UPPER(LADICA) LIKE UPPER(?))"
+            params.extend([f'%{sifra_pretraga}%', f'%{sifra_pretraga}%'])
             
         if naziv_pretraga:
-            sql += " AND (UPPER(SIFRA) LIKE UPPER(?) OR UPPER(NAZIV) LIKE UPPER(?) OR UPPER(LADICA) LIKE UPPER(?))"
-            params.extend([f'%{naziv_pretraga}%', f'%{naziv_pretraga}%', f'%{naziv_pretraga}%'])
+            sql += " AND (UPPER(NAZIV) LIKE UPPER(?) OR UPPER(SIFRA) LIKE UPPER(?))"
+            params.extend([f'%{naziv_pretraga}%', f'%{naziv_pretraga}%'])
             
         cur.execute(sql, params)
         alati = cur.fetchall()
@@ -162,19 +162,31 @@ def admin():
                         lines = text.split('\n')
                         for line in lines:
                             parts = line.split()
-                            if len(parts) >= 3:
-                                # Prilagođeno: Prva kolona je ladica, druga sifra, treća naziv (uzimajući u obzir strukturu redova iz PDF-a)
+                            # Provjeravamo da li red sadrži dovoljno elemenata za obradu
+                            if len(parts) >= 4:
                                 ladica = parts[0]
-                                sifra = parts[1]
-                                kolicina = parts[-3] if len(parts) >= 5 else "1"
-                                status = parts[-2] if len(parts) >= 5 else "Dostupno"
-                                naziv = " ".join(parts[2:-3]) if len(parts) >= 5 else " ".join(parts[2:-1])
+                                kolicina_str = parts[-1]
                                 
                                 try:
-                                    kol_num = int(kolicina)
+                                    kol_num = int(kolicina_str)
                                 except ValueError:
-                                    kol_num = 1
+                                    continue  # Ako zadnji dio nije broj, preskoči zaglavlja ili nevažeće redove
                                     
+                                # Sve između ladice i količine su šifra alata, šifra materijala i naziv
+                                sredina = parts[1:-1]
+                                cijeli_tekst = " ".join(sredina)
+                                
+                                # Pokušajmo razdvojiti prema strukturi (šifra je obično na početku, naziv na kraju)
+                                sifra = sredina[0] if len(sredina) > 0 else ""
+                                if len(sredina) > 2 and sredina[1] == '-':
+                                    sifra = f"{sredina[0]} - {sredina[2]}"
+                                    naziv_tokens = sredina[3:]
+                                else:
+                                    naziv_tokens = sredina[1:]
+                                    
+                                naziv = " ".join(naziv_tokens) if naziv_tokens else cijeli_tekst
+                                status = "Dostupno"
+                                
                                 cursor.execute('INSERT INTO ALATI (LADICA, SIFRA, NAZIV, KOLICINA, STATUS) VALUES (?, ?, ?, ?, ?)',
                                                (ladica, sifra, naziv, kol_num, status))
                                 
@@ -262,11 +274,11 @@ HTML_INDEX = '<doctype html><html>' + HTML_HEAD + '''<body>
         <div class="search-row">
             <div class="search-col">
                 <label style="font-size:11px; color:#8e8e93; font-weight:600;">Šifra / Dio šifre:</label>
-                <input type="text" name="sifra" placeholder="npr. 120-10..." value="{{ sifra_pretraga }}">
+                <input type="text" name="sifra" placeholder="npr. 4836..." value="{{ sifra_pretraga }}">
             </div>
             <div class="search-col">
                 <label style="font-size:11px; color:#8e8e93; font-weight:600;">Naziv / Pojam:</label>
-                <input type="text" name="naziv" placeholder="npr. ključ..." value="{{ naziv_pretraga }}">
+                <input type="text" name="naziv" placeholder="npr. glodalo..." value="{{ naziv_pretraga }}">
             </div>
         </div>
         <button type="submit" style="margin-top:6px;">Pretraži</button>
