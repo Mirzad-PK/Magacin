@@ -151,9 +151,13 @@
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
             if (jsonData.length > 0) {
-                headers = jsonData[0];
-                if (!headers.map(h => String(h).toLowerCase()).includes("ladica")) headers.push("Ladica");
-                if (!headers.map(h => String(h).toLowerCase()).includes("komada")) headers.push("Komada");
+                headers = jsonData[0].map(h => h ? String(h).trim() : "");
+                
+                let ladicaIdx = headers.findIndex(h => /ladica|lokacija|mjesto|polica/i.test(h));
+                let komadaIdx = headers.findIndex(h => /komada|kom|kolicina|kol|qty/i.test(h));
+
+                if (ladicaIdx === -1) { headers.push("Ladica"); }
+                if (komadaIdx === -1) { headers.push("Komada"); }
 
                 rawData = jsonData.slice(1).filter(row => row.length > 0).map(row => {
                     while(row.length < headers.length) row.push("");
@@ -183,26 +187,65 @@
                 for (let i = 1; i <= pdf.numPages; i++) {
                     const page = await pdf.getPage(i);
                     const textContent = await page.getTextContent();
+                    const viewport = page.getViewport({ scale: 1.0 });
+                    const pageWidth = viewport.width;
                     
                     let linesMap = {};
                     textContent.items.forEach(item => {
                         let y = Math.round(item.transform[5]);
+                        let x = item.transform[4];
                         if (!linesMap[y]) linesMap[y] = [];
-                        linesMap[y].push(item.str);
+                        linesMap[y].push({ text: item.str, x: x });
                     });
 
                     let sortedY = Object.keys(linesMap).sort((a, b) => b - a);
                     sortedY.forEach(y => {
-                        let lineText = linesMap[y].join(' ').trim();
-                        if (lineText.length > 0) {
-                            let ladicaMatch = lineText.match(/(?:ladica|lad\.?|L-)\s*([0-9a-zA-Z]+)/i);
-                            let komadaMatch = lineText.match(/(?:kom|komada|kom\.|qty)\s*[:\-]?\s*([0-9]+)/i);
+                        let items = linesMap[y].sort((a, b) => a.x - b.x);
+                        if (items.length === 0) return;
 
-                            let ladicaVal = ladicaMatch ? ladicaMatch[1] : "-";
-                            let komadaVal = komadaMatch ? komadaMatch[1] : "-";
+                        let fullText = items.map(it => it.text).join(' ').trim();
+                        if (fullText.length === 0) return;
 
-                            rawData.push([`Stranica ${i}`, lineText, ladicaVal, komadaVal]);
+                        // Ako linija sadrži tablične dijelove na temelju x koordinate
+                        let mainTextParts = [];
+                        let ladicaParts = [];
+                        let komadaParts = [];
+
+                        items.forEach(it => {
+                            let str = it.text.trim();
+                            if (!str) return;
+
+                            // Ako se stavka nalazi pri desnom dijelu stranice (gdje su obično stupci za Ladicu i Komade)
+                            let relX = it.x / pageWidth;
+
+                            if (relX > 0.85) {
+                                komadaParts.push(str);
+                            } else if (relX > 0.65) {
+                                ladicaParts.push(str);
+                            } else {
+                                mainTextParts.push(str);
+                            }
+                        });
+
+                        let mainStr = mainTextParts.join(' ').trim() || fullText;
+                        let ladicaStr = ladicaParts.join(' ').trim();
+                        let komadaStr = komadaParts.join(' ').trim();
+
+                        // Rezervno prepoznavanje u slučaju da x-položaj varira
+                        if (!ladicaStr) {
+                            let lMatch = fullText.match(/\b([0-9]{1,2}\-[0-9]{1,2}\.?|[0-9]{1,2}\.|[1-9]\s*-\s*BOČNA\s*LADICA|V[0-9]+)\b/i);
+                            if (lMatch) {
+                                ladicaStr = lMatch[1];
+                            } else {
+                                ladicaStr = "-";
+                            }
                         }
+
+                        if (!komadaStr) {
+                            komadaStr = "-";
+                        }
+
+                        rawData.push([`Stranica ${i}`, mainStr, ladicaStr, komadaStr]);
                     });
                 }
 
