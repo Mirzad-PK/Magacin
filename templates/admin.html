@@ -10,7 +10,7 @@
     <style>
         * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; }
-        .container { max-width: 1300px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
+        .container { max-width: 1200px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
         .top-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eceff1; padding-bottom: 10px; margin-bottom: 20px; }
         h2 { margin: 0; color: #2c3e50; }
         .user-info { font-weight: bold; color: #2c3e50; }
@@ -74,7 +74,7 @@
             </label>
 
             <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Unesite šifru alata, naziv ili ladicu (npr. 1-2, TP 438, glodalo)..." disabled>
+                <input type="text" id="searchInput" placeholder="Pretraži po nazivu, šifri ili ladici (npr. TP 438, glodalo, 1-2)..." disabled>
             </div>
         </div>
 
@@ -151,16 +151,21 @@
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
             if (jsonData.length > 0) {
-                headers = jsonData[0].map(h => h ? String(h).trim() : "");
-
-                rawData = jsonData.slice(1).filter(row => row.length > 0).map(row => {
-                    while(row.length < headers.length) row.push("");
-                    return row;
+                headers = ["Ladica", "Šifra alata", "Naziv alata", "Količina"];
+                
+                // Filtriraj redove da uzmemo samo relevantne stupce iz Excela
+                rawData = jsonData.slice(1).filter(row => row.length >= 2).map(row => {
+                    return [
+                        row[0] || "-",
+                        row[1] || "-",
+                        row[3] || row[2] || "-",
+                        row[4] || row[3] || "-"
+                    ];
                 });
 
                 searchInput.disabled = false;
                 searchInput.value = '';
-                statusInfo.textContent = `Učitan dokument: "${file.name}" — Ukupno zapisa: ${rawData.length}`;
+                statusInfo.textContent = `Učitan Excel: "${file.name}" — Ukupno stavki: ${rawData.length}`;
                 renderTable(rawData);
             } else {
                 tableOutput.innerHTML = '<div class="no-data">Dokument je prazan.</div>';
@@ -175,83 +180,101 @@
             const typedarray = new Uint8Array(event.target.result);
 
             pdfjsLib.getDocument(typedarray).promise.then(async function (pdf) {
-                headers = ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
+                headers = ["Ladica", "Šifra alata", "Naziv alata", "Količina"];
                 rawData = [];
 
                 for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                     const page = await pdf.getPage(pageNum);
                     const textContent = await page.getTextContent();
-                    const viewport = page.getViewport({ scale: 1.0 });
-                    const pageWidth = viewport.width;
-
-                    // Grupisanje teksta po redovima (Y koordinata sa tolerancijom od 4px)
+                    
+                    // Grupisanje po Y koordinati s preciznom tolerancijom
                     let rowsMap = {};
 
                     textContent.items.forEach(item => {
                         let str = item.str.trim();
                         if (!str) return;
 
-                        let rawY = item.transform[5];
-                        let x = item.transform[4];
-
-                        // Pronađi postojeći red u toleranciji
-                        let foundY = Object.keys(rowsMap).find(y => Math.abs(parseFloat(y) - rawY) < 4);
+                        let rawY = Math.round(item.transform[5]);
+                        let foundY = Object.keys(rowsMap).find(y => Math.abs(parseInt(y) - rawY) < 5);
                         let targetY = foundY ? foundY : rawY;
 
                         if (!rowsMap[targetY]) rowsMap[targetY] = [];
-                        rowsMap[targetY].push({ text: str, x: x });
+                        rowsMap[targetY].push({ text: str, x: item.transform[4] });
                     });
 
-                    // Sortiraj redove od vrha prema dnu
-                    let sortedY = Object.keys(rowsMap).sort((a, b) => parseFloat(b) - parseFloat(a));
+                    // Sortiraj Y od vrha prema dnu
+                    let sortedY = Object.keys(rowsMap).sort((a, b) => parseInt(b) - parseInt(a));
+
+                    let currentLadica = "";
+                    let currentSifra = "";
+                    let currentNaziv = "";
+                    let currentKolicina = "";
 
                     sortedY.forEach(y => {
                         let items = rowsMap[y].sort((a, b) => a.x - b.x);
-                        let lineFullText = items.map(it => it.text).join(' ');
+                        let lineText = items.map(it => it.text).join(' ').trim();
 
-                        // Preskoči naslove i zaglavlja tablice
-                        if (/STANJE IZLAZNOG SKLADIŠTA|PK Praezision|Datum ispisa|Mirzad Mutapcic|Ladica\s+Sifra alata|Sifra materijala\s+Naziv alata/i.test(lineFullText)) {
+                        // Preskoči zaglavlja, zaglavlja tablica, datume i stranice
+                        if (/STANJE IZLAZNOG|PK Praezision|Datum ispisa|Mirzad Mutapcic|Ladica\s+Sifra alata|Strana\s+\d+|info@pk|www\.pk|Bosna i Hercegovina|Gradacac/i.test(lineText)) {
                             return;
                         }
 
-                        let colLadica = [];
-                        let colSifraAlata = [];
-                        let colSifraMat = [];
-                        let colNazivAlata = [];
-                        let colKolicina = [];
-
-                        items.forEach(it => {
-                            let relX = it.x / pageWidth;
-
-                            // Razvrstavanje po horizontalnim zonama (X koordinatama)
-                            if (relX < 0.15) {
-                                colLadica.push(it.text);
-                            } else if (relX >= 0.15 && relX < 0.38) {
-                                colSifraAlata.push(it.text);
-                            } else if (relX >= 0.38 && relX < 0.62) {
-                                colSifraMat.push(it.text);
-                            } else if (relX >= 0.62 && relX < 0.88) {
-                                colNazivAlata.push(it.text);
-                            } else {
-                                colKolicina.push(it.text);
+                        // Ako linija sadrži količinu (samostalni broj na kraju ili na desnoj strani)
+                        let lastItem = items[items.length - 1];
+                        if (items.length <= 2 && /^\d+$/.test(lineText) && parseInt(lineText) >= 0 && parseInt(lineText) < 1000 && lastItem.x > 450) {
+                            currentKolicina = lineText;
+                            
+                            // Imamo kompletnu stavku, spremamo je!
+                            if (currentSifra || currentNaziv) {
+                                rawData.push([
+                                    currentLadica || "-",
+                                    currentSifra || "-",
+                                    currentNaziv || "-",
+                                    currentKolicina || "0"
+                                ]);
+                                currentLadica = "";
+                                currentSifra = "";
+                                currentNaziv = "";
+                                currentKolicina = "";
                             }
-                        });
+                            return;
+                        }
 
-                        let ladicaStr = colLadica.join(' ').trim();
-                        let sifraAlataStr = colSifraAlata.join(' ').trim();
-                        let sifraMatStr = colSifraMat.join(' ').trim();
-                        let nazivAlataStr = colNazivAlata.join(' ').trim();
-                        let kolicinaStr = colKolicina.join(' ').trim();
+                        // Ako linija počinje s oznakom ladice (npr. "1.", "1-2.", "2-3.", "V1", "1 - BOČNA LADICA")
+                        if (/^(\d{1,2}\.?\s*\d?|\d{1,2}-\d{1,2}\.?|V\d+|\d+\s*-\s*BOČNA\s*LADICA)$/i.test(lineText) || (items[0].x < 100 && /^\d+[\.-]?/.test(lineText))) {
+                            if (currentSifra || currentNaziv) {
+                                // Spremi prethodnu ako nije imala količinu
+                                rawData.push([
+                                    currentLadica || "-",
+                                    currentSifra || "-",
+                                    currentNaziv || "-",
+                                    currentKolicina || "-"
+                                ]);
+                                currentSifra = "";
+                                currentNaziv = "";
+                                currentKolicina = "";
+                            }
+                            currentLadica = lineText;
+                            return;
+                        }
 
-                        // Dodaj u tablicu samo ako redak sadrži bilo koji podatak o alatu
-                        if (ladicaStr || sifraAlataStr || nazivAlataStr) {
-                            rawData.push([
-                                ladicaStr || "-",
-                                sifraAlataStr || "-",
-                                sifraMatStr || "-",
-                                nazivAlataStr || "-",
-                                kolicinaStr || "-"
-                            ]);
+                        // Ako linija sadrži šifru alata (npr. sadrži crticu s brojevima poput "4836 - TP" ili brojeve alata)
+                        if (/\b\d{3,5}\s*-\s*[A-Z0-9]/i.test(lineText) || /O-OP-|GR-|SR-|BP-|TP-/i.test(lineText)) {
+                            if (!currentSifra) {
+                                currentSifra = lineText;
+                            } else {
+                                currentNaziv += " " + lineText;
+                            }
+                            return;
+                        }
+
+                        // Sve ostalo je naziv alata ili nastavak šifre
+                        if (currentLadica || currentSifra) {
+                            if (!currentNaziv) {
+                                currentNaziv = lineText;
+                            } else {
+                                currentNaziv += " " + lineText;
+                            }
                         }
                     });
                 }
@@ -259,10 +282,10 @@
                 if (rawData.length > 0) {
                     searchInput.disabled = false;
                     searchInput.value = '';
-                    statusInfo.textContent = `Učitan PDF: "${file.name}" — Ukupno stavki: ${rawData.length}`;
+                    statusInfo.textContent = `Učitan PDF: "${file.name}" — Ukupno pronađeno alata: ${rawData.length}`;
                     renderTable(rawData);
                 } else {
-                    tableOutput.innerHTML = '<div class="no-data">Nije moguće izvući tablicu iz ovog PDF-a.</div>';
+                    tableOutput.innerHTML = '<div class="no-data">Nije moguće automatski izdvojiti stavke iz ovog PDF-a. Preporučujemo učitavanje Excel datoteke (.xlsx).</div>';
                 }
             }).catch(function (error) {
                 statusInfo.textContent = "Greška pri otvaranju PDF dokumenta.";
