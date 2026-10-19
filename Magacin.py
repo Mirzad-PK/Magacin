@@ -162,6 +162,11 @@ def admin():
                     if text:
                         lines = text.split('\n')
                         for line in lines:
+                            line_lower = line.lower()
+                            # Preskačemo zaglavlja, datume, vremena i sistemske linije iz PDF-a
+                            if any(kw in line_lower for kw in ['sati', 'minuta', 'strana', 'ispis', 'stanje izlaznog', 'pk praezision', 'sarajevska', 'korisnik', 'datum', 'šifra alata', 'broj ladice']):
+                                continue
+
                             parts = line.split()
                             if len(parts) >= 3:
                                 kolicina_str = parts[-1]
@@ -193,7 +198,7 @@ def admin():
                                 
                 conn.commit()
                 conn.close()
-                poruka = f"Uspješno učitano i obrađeno {ukupno_ucitano} stavki sa svih stranica PDF baze!"
+                poruka = f"Uspješno učitano i obrađeno {ukupno_ucitano} stavki alata!"
             except Exception as e:
                 poruka = f"Greška pri čitanju PDF-a: {str(e)}"
         else:
