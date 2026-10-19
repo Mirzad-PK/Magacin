@@ -1,4 +1,10 @@
-<!DOCTYPE html>
+const express = require('express');
+const app = express();
+const PORT = process.env.PORT || 3000;
+
+// Ruta za /admin koja direktno prikazuje stranicu za pretragu alata
+app.get('/admin', (req, res) => {
+    res.send(`<!DOCTYPE html>
 <html lang="hr">
 <head>
     <meta charset="UTF-8">
@@ -182,7 +188,7 @@
         const file = e.target.files[0];
         if (!file) return;
 
-        statusInfo.textContent = `Učitavam dokument: "${file.name}"...`;
+        statusInfo.textContent = \`Učitavam dokument: "\${file.name}"...\`;
 
         if (file.name.toLowerCase().endsWith('.pdf')) {
             processPDF(file);
@@ -206,7 +212,7 @@
 
                 searchInput.disabled = false;
                 searchInput.value = '';
-                statusInfo.textContent = `Učitan dokument: "${file.name}" — Ukupno zapisa: ${rawData.length}`;
+                statusInfo.textContent = \`Učitan dokument: "\${file.name}" — Ukupno zapisa: \${rawData.length}\`;
                 renderTable(rawData);
             } else {
                 tableOutput.innerHTML = '<div class="no-data">Dokument je prazan.</div>';
@@ -239,7 +245,7 @@
                     sortedY.forEach(y => {
                         let lineText = linesMap[y].join(' ').trim();
                         if (lineText.length > 0) {
-                            rawData.push([`Stranica ${i}`, lineText]);
+                            rawData.push([\`Stranica \${i}\`, lineText]);
                         }
                     });
                 }
@@ -247,7 +253,7 @@
                 if (rawData.length > 0) {
                     searchInput.disabled = false;
                     searchInput.value = '';
-                    statusInfo.textContent = `Učitan PDF: "${file.name}" — Ukupno linija teksta: ${rawData.length}`;
+                    statusInfo.textContent = \`Učitan PDF: "\${file.name}" — Ukupno linija teksta: \${rawData.length}\`;
                     renderTable(rawData);
                 } else {
                     tableOutput.innerHTML = '<div class="no-data">Nije moguće izvući tekst iz ovog PDF-a.</div>';
@@ -265,7 +271,7 @@
 
         if (!query) {
             renderTable(rawData);
-            statusInfo.textContent = `Ukupno zapisa: ${rawData.length}`;
+            statusInfo.textContent = \`Ukupno zapisa: \${rawData.length}\`;
             return;
         }
 
@@ -275,7 +281,7 @@
             });
         });
 
-        statusInfo.textContent = `Pronađeno zapisa: ${filteredData.length} od ukupno ${rawData.length}`;
+        statusInfo.textContent = \`Pronađeno zapisa: \${filteredData.length} od ukupno \${rawData.length}\`;
         renderTable(filteredData, query);
     });
 
@@ -287,7 +293,7 @@
 
         let html = '<table><thead><tr>';
         headers.forEach(header => {
-            html += `<th>${header !== undefined ? header : ''}</th>`;
+            html += \`<th>\${header !== undefined ? header : ''}</th>\`;
         });
         html += '</tr></thead><tbody>';
 
@@ -297,11 +303,11 @@
                 let cellValue = row[i] !== undefined && row[i] !== null ? row[i].toString() : '';
                 
                 if (highlightQuery && cellValue.toLowerCase().includes(highlightQuery)) {
-                    const regex = new RegExp(`(${escapeRegExp(highlightQuery)})`, 'gi');
+                    const regex = new RegExp(\`(\${escapeRegExp(highlightQuery)})\`, 'gi');
                     cellValue = cellValue.replace(regex, '<mark>$1</mark>');
                 }
 
-                html += `<td>${cellValue}</td>`;
+                html += \`<td>\${cellValue}</td>\`;
             }
             html += '</tr>';
         });
@@ -311,9 +317,14 @@
     }
 
     function escapeRegExp(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\\\$&');
     }
 </script>
 
 </body>
-</html>
+</html>`);
+});
+
+app.listen(PORT, () => {
+    console.log('Server pokrenut na portu ' + PORT);
+});
