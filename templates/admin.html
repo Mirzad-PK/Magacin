@@ -116,7 +116,6 @@
         btn.classList.add('active');
     }
 
-    // JS za čitanje dokumenata
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
     let rawData = [];
@@ -279,7 +278,6 @@
         return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
     }
 
-    // Učitavanje i upravljanje korisnicima
     function loadUsers() {
         fetch('/api/users')
             .then(res => res.json())
