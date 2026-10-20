@@ -7,58 +7,53 @@ from flask import Flask, render_template, request, redirect, url_for, session, j
 app = Flask(__name__)
 app.secret_key = 'super_tajni_kljuc_magacin_2026'
 
-# Dohvaćanje URL-a baze iz Render Environment varijable
 DATABASE_URL = os.environ.get('DATABASE_URL')
 
 def get_db_connection():
     if not DATABASE_URL:
         raise Exception("DATABASE_URL nije postavljen u Environment Variables na Renderu!")
     conn = psycopg2.connect(DATABASE_URL)
+    conn.autocommit = True
     return conn
 
 def init_db():
-    """Stvara tablice u PostgreSQL bazi ako već ne postoje."""
-    conn = get_db_connection()
-    cur = conn.cursor()
-    
-    # Tablica za korisnike
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS users (
-            id SERIAL PRIMARY KEY,
-            username VARCHAR(50) UNIQUE NOT NULL,
-            password VARCHAR(100) NOT NULL,
-            approved BOOLEAN DEFAULT FALSE,
-            is_admin BOOLEAN DEFAULT FALSE
-        );
-    ''')
-    
-    # Tablica za skladišne podatke
-    cur.execute('''
-        CREATE TABLE IF NOT EXISTS magacin_data (
-            id INT PRIMARY KEY DEFAULT 1,
-            filename VARCHAR(255),
-            headers TEXT,
-            rows TEXT
-        );
-    ''')
-
-    # Provjeri postoji li glavni admin korisnik (mirzad)
-    cur.execute("SELECT * FROM users WHERE username = 'mirzad';")
-    if not cur.fetchone():
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        
         cur.execute('''
-            INSERT INTO users (username, password, approved, is_admin)
-            VALUES ('mirzad', 'mojalozinka123', TRUE, TRUE);
+            CREATE TABLE IF NOT EXISTS users (
+                id SERIAL PRIMARY KEY,
+                username VARCHAR(50) UNIQUE NOT NULL,
+                password VARCHAR(100) NOT NULL,
+                approved BOOLEAN DEFAULT FALSE,
+                is_admin BOOLEAN DEFAULT FALSE
+            );
+        ''')
+        
+        cur.execute('''
+            CREATE TABLE IF NOT EXISTS magacin_data (
+                id INT PRIMARY KEY DEFAULT 1,
+                filename VARCHAR(255),
+                headers TEXT,
+                rows TEXT
+            );
         ''')
 
-    conn.commit()
-    cur.close()
-    conn.close()
+        cur.execute("SELECT id FROM users WHERE username = 'mirzad';")
+        if not cur.fetchone():
+            cur.execute('''
+                INSERT INTO users (username, password, approved, is_admin)
+                VALUES ('mirzad', 'mojalozinka123', TRUE, TRUE);
+            ''')
+
+        cur.close()
+        conn.close()
+    except Exception as e:
+        print(f"Greška pri inicijalizaciji baze: {e}")
 
 # Inicijalizacija baze pri pokretanju
-try:
-    init_db()
-except Exception as e:
-    print(f"Greška pri inicijalizaciji baze: {e}")
+init_db()
 
 @app.route('/')
 def home():
@@ -118,7 +113,6 @@ def register():
                         "INSERT INTO users (username, password, approved, is_admin) VALUES (%s, %s, FALSE, FALSE);",
                         (username, password)
                     )
-                    conn.commit()
                     success = "Registracija uspješna! Vaš račun čeka odobrenje administratora."
                 cur.close()
                 conn.close()
@@ -151,7 +145,7 @@ def get_data():
         cur.close()
         conn.close()
 
-        if row:
+        if row and row['rows']:
             return jsonify({
                 "filename": row['filename'],
                 "headers": json.loads(row['headers']),
@@ -187,10 +181,9 @@ def save_data():
                 headers = EXCLUDED.headers,
                 rows = EXCLUDED.rows;
         ''', (filename, headers_str, rows_str))
-        conn.commit()
         cur.close()
         conn.close()
-        return jsonify({'success': True})
+        return jsonify({'success': True, 'count': len(req_data.get('rows', []))})
     except Exception as e:
         return jsonify({'error': str(e)}), 500
 
@@ -232,7 +225,6 @@ def toggle_user():
             
             new_status = not user['approved']
             cur.execute("UPDATE users SET approved = %s WHERE username = %s;", (new_status, username))
-            conn.commit()
             cur.close()
             conn.close()
             return jsonify({'success': True, 'approved': new_status})
