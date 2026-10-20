@@ -61,6 +61,10 @@ def home():
         return redirect(url_for('admin_panel'))
     return redirect(url_for('login'))
 
+@app.route('/ping')
+def ping():
+    return jsonify({'status': 'alive'}), 200
+
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     error = None
