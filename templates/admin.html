@@ -440,6 +440,16 @@
             }
         });
     }
+
+    // Lagani pozadinski ping svakih 5 minuta (300.000 ms) - drži Render budnim bez opterećenja baze
+    setInterval(function() {
+        fetch('/ping')
+            .then(res => res.json())
+            .then(data => {
+                console.log("Server je budan i aktivan.");
+            })
+            .catch(err => console.log("Ping greška:", err));
+    }, 5 * 60 * 1000);
 </script>
 
 </body>
