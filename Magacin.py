@@ -1,66 +1,64 @@
-import json
 import os
+import json
+import psycopg2
+from psycopg2.extras import RealDictCursor
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
 
 app = Flask(__name__)
 app.secret_key = 'super_tajni_kljuc_magacin_2026'
 
-USERS_FILE = 'users.json'
-DATA_FILE = 'magacin_db.json'
+# Dohvaćanje URL-a baze iz Render Environment varijable
+DATABASE_URL = os.environ.get('DATABASE_URL')
 
-# Učitavanje korisnika iz JSON datoteke
-def load_users():
-    default_users = {
-        "mirzad": {
-            "password": "mojalozinka123",
-            "approved": True,
-            "is_admin": True
-        }
-    }
-    if os.path.exists(USERS_FILE):
-        try:
-            with open(USERS_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data if data else default_users
-        except Exception:
-            return default_users
-    return default_users
+def get_db_connection():
+    if not DATABASE_URL:
+        raise Exception("DATABASE_URL nije postavljen u Environment Variables na Renderu!")
+    conn = psycopg2.connect(DATABASE_URL)
+    return conn
 
-# Spremanje korisnika u JSON datoteku
-def save_users(users):
-    try:
-        with open(USERS_FILE, 'w', encoding='utf-8') as f:
-            json.dump(users, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"Greška pri spremanju korisnika: {e}")
+def init_db():
+    """Stvara tablice u PostgreSQL bazi ako već ne postoje."""
+    conn = get_db_connection()
+    cur = conn.cursor()
+    
+    # Tablica za korisnike
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS users (
+            id SERIAL PRIMARY KEY,
+            username VARCHAR(50) UNIQUE NOT NULL,
+            password VARCHAR(100) NOT NULL,
+            approved BOOLEAN DEFAULT FALSE,
+            is_admin BOOLEAN DEFAULT FALSE
+        );
+    ''')
+    
+    # Tablica za skladišne podatke
+    cur.execute('''
+        CREATE TABLE IF NOT EXISTS magacin_data (
+            id INT PRIMARY KEY DEFAULT 1,
+            filename VARCHAR(255),
+            headers TEXT,
+            rows TEXT
+        );
+    ''')
 
-# Učitavanje sačuvanog dokumenta sa servera
-def load_saved_data():
-    default_data = {
-        "filename": "",
-        "headers": ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"],
-        "rows": []
-    }
-    if os.path.exists(DATA_FILE):
-        try:
-            with open(DATA_FILE, 'r', encoding='utf-8') as f:
-                data = json.load(f)
-                return data if data else default_data
-        except Exception:
-            return default_data
-    return default_data
+    # Provjeri postoji li glavni admin korisnik (mirzad)
+    cur.execute("SELECT * FROM users WHERE username = 'mirzad';")
+    if not cur.fetchone():
+        cur.execute('''
+            INSERT INTO users (username, password, approved, is_admin)
+            VALUES ('mirzad', 'mojalozinka123', TRUE, TRUE);
+        ''')
 
-# Spremanje novog dokumenta u JSON datoteku
-def save_data_to_file(data):
-    try:
-        with open(DATA_FILE, 'w', encoding='utf-8') as f:
-            json.dump(data, f, ensure_ascii=False, indent=4)
-    except Exception as e:
-        print(f"Greška pri spremanju podataka: {e}")
+    conn.commit()
+    cur.close()
+    conn.close()
 
-# Inicijalno učitavanje pri pokretanju
-USERS = load_users()
-save_users(USERS)
+# Inicijalizacija baze pri pokretanju
+try:
+    init_db()
+except Exception as e:
+    print(f"Greška pri inicijalizaciji baze: {e}")
 
 @app.route('/')
 def home():
@@ -75,17 +73,26 @@ def login():
         username = request.form.get('username', '').strip().lower()
         password = request.form.get('password', '')
 
-        users = load_users()
-        if username in users and users[username]['password'] == password:
-            if not users[username]['approved']:
-                error = "Vaš račun još nije odobren od strane administratora!"
+        try:
+            conn = get_db_connection()
+            cur = conn.cursor(cursor_factory=RealDictCursor)
+            cur.execute("SELECT * FROM users WHERE username = %s;", (username,))
+            user = cur.fetchone()
+            cur.close()
+            conn.close()
+
+            if user and user['password'] == password:
+                if not user['approved']:
+                    error = "Vaš račun još nije odobren od strane administratora!"
+                else:
+                    session['logged_in'] = True
+                    session['username'] = username
+                    session['is_admin'] = user['is_admin']
+                    return redirect(url_for('admin_panel'))
             else:
-                session['logged_in'] = True
-                session['username'] = username
-                session['is_admin'] = users[username].get('is_admin', False)
-                return redirect(url_for('admin_panel'))
-        else:
-            error = "Pogrešno korisničko ime ili lozinka!"
+                error = "Pogrešno korisničko ime ili lozinka!"
+        except Exception as e:
+            error = f"Greška s bazom podataka: {e}"
 
     return render_template('login.html', error=error)
 
@@ -97,19 +104,26 @@ def register():
         username = request.form.get('username', '').strip().lower()
         password = request.form.get('password', '')
 
-        users = load_users()
         if not username or not password:
             error = "Molimo unesite sve podatke!"
-        elif username in users:
-            error = "Korisničko ime je već zauzeto!"
         else:
-            users[username] = {
-                "password": password,
-                "approved": False,
-                "is_admin": False
-            }
-            save_users(users)
-            success = "Registracija uspješna! Vaš račun čeka odobrenje administratora."
+            try:
+                conn = get_db_connection()
+                cur = conn.cursor()
+                cur.execute("SELECT id FROM users WHERE username = %s;", (username,))
+                if cur.fetchone():
+                    error = "Korisničko ime je već zauzeto!"
+                else:
+                    cur.execute(
+                        "INSERT INTO users (username, password, approved, is_admin) VALUES (%s, %s, FALSE, FALSE);",
+                        (username, password)
+                    )
+                    conn.commit()
+                    success = "Registracija uspješna! Vaš račun čeka odobrenje administratora."
+                cur.close()
+                conn.close()
+            except Exception as e:
+                error = f"Greška s bazom: {e}"
 
     return render_template('register.html', error=error, success=success)
 
@@ -128,7 +142,29 @@ def admin_panel():
 def get_data():
     if not session.get('logged_in'):
         return jsonify({'error': 'Neovlašten pristup'}), 403
-    return jsonify(load_saved_data())
+
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT filename, headers, rows FROM magacin_data WHERE id = 1;")
+        row = cur.fetchone()
+        cur.close()
+        conn.close()
+
+        if row:
+            return jsonify({
+                "filename": row['filename'],
+                "headers": json.loads(row['headers']),
+                "rows": json.loads(row['rows'])
+            })
+        else:
+            return jsonify({
+                "filename": "",
+                "headers": ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"],
+                "rows": []
+            })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/data', methods=['POST'])
 def save_data():
@@ -136,29 +172,43 @@ def save_data():
         return jsonify({'error': 'Neovlašten pristup'}), 403
 
     req_data = request.get_json(silent=True) or {}
-    new_data = {
-        "filename": req_data.get('filename', 'Dokument'),
-        "headers": req_data.get('headers', []),
-        "rows": req_data.get('rows', [])
-    }
-    save_data_to_file(new_data)
+    filename = req_data.get('filename', 'Dokument')
+    headers_str = json.dumps(req_data.get('headers', []))
+    rows_str = json.dumps(req_data.get('rows', []))
 
-    return jsonify({'success': True, 'count': len(new_data['rows'])})
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor()
+        cur.execute('''
+            INSERT INTO magacin_data (id, filename, headers, rows)
+            VALUES (1, %s, %s, %s)
+            ON CONFLICT (id) DO UPDATE 
+            SET filename = EXCLUDED.filename,
+                headers = EXCLUDED.headers,
+                rows = EXCLUDED.rows;
+        ''', (filename, headers_str, rows_str))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return jsonify({'success': True})
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/users', methods=['GET'])
 def get_users():
     if not session.get('logged_in') or not session.get('is_admin'):
         return jsonify({'error': 'Neovlašten pristup'}), 403
     
-    users = load_users()
-    users_list = []
-    for user, data in users.items():
-        users_list.append({
-            'username': user,
-            'approved': data.get('approved', False),
-            'is_admin': data.get('is_admin', False)
-        })
-    return jsonify(users_list)
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT username, approved, is_admin FROM users ORDER BY id ASC;")
+        users_list = cur.fetchall()
+        cur.close()
+        conn.close()
+        return jsonify(users_list)
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 @app.route('/api/users/toggle', methods=['POST'])
 def toggle_user():
@@ -168,16 +218,30 @@ def toggle_user():
     req_data = request.get_json(silent=True) or {}
     username = req_data.get('username')
 
-    users = load_users()
-    if username in users:
-        if users[username].get('is_admin'):
-            return jsonify({'error': 'Nije moguće promijeniti status glavnog administratora!'}), 400
-        
-        users[username]['approved'] = not users[username]['approved']
-        save_users(users)
-        return jsonify({'success': True, 'approved': users[username]['approved']})
-    
-    return jsonify({'error': 'Korisnik nije pronađen'}), 404
+    try:
+        conn = get_db_connection()
+        cur = conn.cursor(cursor_factory=RealDictCursor)
+        cur.execute("SELECT is_admin, approved FROM users WHERE username = %s;", (username,))
+        user = cur.fetchone()
+
+        if user:
+            if user['is_admin']:
+                cur.close()
+                conn.close()
+                return jsonify({'error': 'Nije moguće promijeniti status glavnog administratora!'}), 400
+            
+            new_status = not user['approved']
+            cur.execute("UPDATE users SET approved = %s WHERE username = %s;", (new_status, username))
+            conn.commit()
+            cur.close()
+            conn.close()
+            return jsonify({'success': True, 'approved': new_status})
+
+        cur.close()
+        conn.close()
+        return jsonify({'error': 'Korisnik nije pronađen'}), 404
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
 
 if __name__ == '__main__':
     app.run(debug=True)
