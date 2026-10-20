@@ -10,7 +10,7 @@
     <style>
         * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         body { background-color: #f4f7f6; margin: 0; padding: 20px; color: #333; }
-        .container { max-width: 1200px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
+        .container { max-width: 1400px; margin: 0 auto; background: #ffffff; padding: 25px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
         .top-bar { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #eceff1; padding-bottom: 10px; margin-bottom: 20px; }
         h2 { margin: 0; color: #2c3e50; }
         .user-info { font-weight: bold; color: #2c3e50; }
@@ -69,19 +69,19 @@
     <div id="searchTab" class="tab-content active">
         <div class="controls">
             <label class="file-upload-btn">
-                Učitaj Excel, CSV ili PDF
+                Učitaj Novi Dokument
                 <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .pdf">
             </label>
 
             <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Pretraži po nazivu, šifri ili ladici (npr. TP 438, 1-2, glodalo)..." disabled>
+                <input type="text" id="searchInput" placeholder="Pretraži po nazivu, šifri, materijalu ili ladici..." disabled>
             </div>
         </div>
 
-        <div class="status-info" id="statusInfo">Molimo učitajte Excel, CSV ili PDF dokument.</div>
+        <div class="status-info" id="statusInfo">Provjeravam sačuvani dokument iz baze...</div>
 
         <div class="table-container">
-            <div id="tableOutput" class="no-data">Dokument još nije učitan.</div>
+            <div id="tableOutput" class="no-data">Dokument se učitava iz baze...</div>
         </div>
     </div>
 
@@ -119,19 +119,68 @@
     pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
     let rawData = [];
-    let headers = [];
+    let headers = ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
 
     const fileInput = document.getElementById('fileInput');
     const searchInput = document.getElementById('searchInput');
     const tableOutput = document.getElementById('tableOutput');
     const statusInfo = document.getElementById('statusInfo');
 
+    window.addEventListener('DOMContentLoaded', function() {
+        loadServerData();
+    });
+
+    function loadServerData() {
+        statusInfo.textContent = "Učitavam sačuvani lager iz baze podataka...";
+        fetch('/api/data')
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.rows && data.rows.length > 0) {
+                    headers = data.headers && data.headers.length > 0 ? data.headers : ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
+                    rawData = data.rows;
+                    searchInput.disabled = false;
+                    statusInfo.textContent = `Spremljeni lager sa baze: "${data.filename}" — Ukupno zapisa: ${rawData.length}`;
+                    renderTable(rawData);
+                } else {
+                    statusInfo.textContent = "U bazi trenutno nema spremljenog lagera. Molimo učitajte Excel ili PDF.";
+                    tableOutput.innerHTML = '<div class="no-data">Baza je prazna. Učitajte dokument sa računara.</div>';
+                }
+            })
+            .catch(err => {
+                statusInfo.textContent = "Greška pri dohvaćanju lagera iz baze.";
+            });
+    }
+
+    function saveServerData(filename, currentHeaders, rows) {
+        statusInfo.textContent = "Spremam izvučeni lager u bazu podataka za sve korisnike...";
+        fetch('/api/data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                filename: filename,
+                headers: currentHeaders,
+                rows: rows
+            })
+        })
+        .then(res => res.json())
+        .then(res => {
+            if (res.success) {
+                statusInfo.textContent = `USPJEŠNO SPREMLJENO U BAZU! Dokument "${filename}" (zapisa: ${rows.length}) sada je trajno vidljiv na svim uređajima!`;
+            } else {
+                statusInfo.textContent = "Greška pri spremanju u bazu podataka: " + (res.error || "");
+            }
+        })
+        .catch(err => {
+            statusInfo.textContent = "Greška u mrežnoj vezi pri spremanju u bazu.";
+        });
+    }
+
     if (fileInput) {
         fileInput.addEventListener('change', function (e) {
             const file = e.target.files[0];
             if (!file) return;
 
-            statusInfo.textContent = `Učitavam dokument: "${file.name}"...`;
+            statusInfo.textContent = `Učitavam i obrađujem dokument: "${file.name}"...`;
 
             if (file.name.toLowerCase().endsWith('.pdf')) {
                 processPDF(file);
@@ -151,22 +200,22 @@
             const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
 
             if (jsonData.length > 0) {
-                headers = ["Ladica", "Šifra alata", "Naziv alata", "Količina"];
+                headers = ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
                 
-                // Izvuci točno stupce: Ladica (0), Šifra alata (1), Naziv alata (3), Količina (zadnji stupac)
                 rawData = jsonData.slice(1).filter(row => row.length >= 2).map(row => {
-                    let ladica = row[0] !== undefined ? row[0] : "-";
-                    let sifra = row[1] !== undefined ? row[1] : "-";
-                    let naziv = row[3] !== undefined ? row[3] : (row[2] !== undefined ? row[2] : "-");
-                    let kolicina = row[row.length - 1] !== undefined ? row[row.length - 1] : "-";
-                    
-                    return [ladica, sifra, naziv, kolicina];
+                    return [
+                        row[0] !== undefined ? row[0] : "-",
+                        row[1] !== undefined ? row[1] : "-",
+                        row[2] !== undefined ? row[2] : "-",
+                        row[3] !== undefined ? row[3] : "-",
+                        row[4] !== undefined ? row[4] : "-"
+                    ];
                 });
 
                 searchInput.disabled = false;
                 searchInput.value = '';
-                statusInfo.textContent = `Učitan Excel: "${file.name}" — Ukupno stavki: ${rawData.length}`;
                 renderTable(rawData);
+                saveServerData(file.name, headers, rawData);
             } else {
                 tableOutput.innerHTML = '<div class="no-data">Dokument je prazan.</div>';
             }
@@ -180,20 +229,23 @@
             const typedarray = new Uint8Array(event.target.result);
 
             pdfjsLib.getDocument(typedarray).promise.then(async function (pdf) {
-                headers = ["Ladica", "Šifra alata", "Naziv alata", "Količina"];
+                headers = ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
                 rawData = [];
 
                 for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
                     const page = await pdf.getPage(pageNum);
                     const textContent = await page.getTextContent();
-                    
+                    const viewport = page.getViewport({ scale: 1.0 });
+                    const pageWidth = viewport.width;
+
                     let rowsMap = {};
+
                     textContent.items.forEach(item => {
                         let str = item.str.trim();
                         if (!str) return;
 
                         let rawY = Math.round(item.transform[5]);
-                        let foundY = Object.keys(rowsMap).find(y => Math.abs(parseInt(y) - rawY) < 6);
+                        let foundY = Object.keys(rowsMap).find(y => Math.abs(parseInt(y) - rawY) < 5);
                         let targetY = foundY ? foundY : rawY;
 
                         if (!rowsMap[targetY]) rowsMap[targetY] = [];
@@ -204,38 +256,52 @@
 
                     sortedY.forEach(y => {
                         let items = rowsMap[y].sort((a, b) => a.x - b.x);
-                        
-                        // Filtriramo stavke koje pripadaju retku alata prema x koordinati (stupci)
-                        let ladicaItem = items.find(it => it.x < 120);
-                        let sifraItem = items.find(it => it.x >= 120 && it.x < 350);
-                        let nazivItem = items.find(it => it.x >= 350 && it.x < 520);
-                        let kolicinaItem = items.find(it => it.x >= 520);
+                        let fullLineText = items.map(it => it.text).join(' ');
 
-                        let ladica = ladicaItem ? ladicaItem.text : "";
-                        let sifra = sifraItem ? sifraItem.text : "";
-                        let naziv = nazivItem ? nazivItem.text : "";
-                        let kolicina = kolicinaItem ? kolicinaItem.text : "";
-
-                        // Ako nema količine u desnoj zoni, provjeri zadnji element ako je broj
-                        if (!kolicina && items.length > 0) {
-                            let last = items[items.length - 1];
-                            if (/^\d+$/.test(last.text) && last.x > 450) {
-                                kolicina = last.text;
-                            }
-                        }
-
-                        // Preskoči zaglavlja i prazne redove
-                        let fullLine = items.map(i => i.text).join(' ');
-                        if (/STANJE IZLAZNOG|PK Praezision|Datum ispisa|Mirzad Mutapcic|Ladica\s+Sifra|Strana\s+\d+|info@pk/i.test(fullLine)) {
+                        if (/STANJE IZLAZNOG|PK Praezision|Datum ispisa|Mirzad Mutapcic|Ladica\s+Sifra|Sifra materijala|Naziv alata\s+Kolicina|Strana\s+\d+|info@pk|www\.pk|Bosna i Hercegovina|Gradacac/i.test(fullLineText)) {
                             return;
                         }
 
-                        if (sifra || naziv || ladica) {
+                        let colLadica = [];
+                        let colSifraAlata = [];
+                        let colSifraMat = [];
+                        let colNazivAlata = [];
+                        let colKolicina = [];
+
+                        items.forEach(it => {
+                            let relX = it.x / pageWidth;
+
+                            if (relX < 0.12) {
+                                colLadica.push(it.text);
+                            } else if (relX >= 0.12 && relX < 0.38) {
+                                colSifraAlata.push(it.text);
+                            } else if (relX >= 0.38 && relX < 0.62) {
+                                colSifraMat.push(it.text);
+                            } else if (relX >= 0.62 && relX < 0.88) {
+                                colNazivAlata.push(it.text);
+                            } else {
+                                colKolicina.push(it.text);
+                            }
+                        });
+
+                        let ladicaStr = colLadica.join(' ').trim();
+                        let sifraAlataStr = colSifraAlata.join(' ').trim();
+                        let sifraMatStr = colSifraMat.join(' ').trim();
+                        let nazivAlataStr = colNazivAlata.join(' ').trim();
+                        let kolicinaStr = colKolicina.join(' ').trim();
+
+                        if (/^O-OP-/i.test(sifraAlataStr) && !sifraMatStr) {
+                            sifraMatStr = sifraAlataStr;
+                            sifraAlataStr = "";
+                        }
+
+                        if (ladicaStr || sifraAlataStr || sifraMatStr || nazivAlataStr) {
                             rawData.push([
-                                ladica || "-",
-                                sifra || "-",
-                                naziv || "-",
-                                kolicina || "0"
+                                ladicaStr || "-",
+                                sifraAlataStr || "-",
+                                sifraMatStr || "-",
+                                nazivAlataStr || "-",
+                                kolicinaStr || "-"
                             ]);
                         }
                     });
@@ -244,10 +310,11 @@
                 if (rawData.length > 0) {
                     searchInput.disabled = false;
                     searchInput.value = '';
-                    statusInfo.textContent = `Učitan PDF: "${file.name}" — Ukupno pronađeno stavki: ${rawData.length}`;
                     renderTable(rawData);
+                    // KLJUČNO: Ovdje automatski šaljemo pročitane podatke u bazu na Renderu!
+                    saveServerData(file.name, headers, rawData);
                 } else {
-                    tableOutput.innerHTML = '<div class="no-data">Nije moguće automatski izdvojiti stavke iz ovog PDF-a. Preporučujemo učitavanje Excel datoteke (.xlsx).</div>';
+                    tableOutput.innerHTML = '<div class="no-data">Nije moguće automatski izdvojiti stavke iz ovog PDF-a.</div>';
                 }
             }).catch(function (error) {
                 statusInfo.textContent = "Greška pri otvaranju PDF dokumenta.";
