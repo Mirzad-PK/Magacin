@@ -104,12 +104,122 @@
             border-radius: 6px;
             font-size: 13px;
             margin-bottom: 15px;
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Prijava - Magacin Alata</title>
+    <style>
+        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        
+        body {
+            /* Slika radnice za laptopom u proizvodnji sa tamnim premazom */
+            background: linear-gradient(rgba(15, 23, 42, 0.78), rgba(15, 23, 42, 0.78)), 
+                        url('https://images.unsplash.com/photo-1581092335397-9583fe92d232?auto=format&fit=crop&w=1920&q=80') no-repeat center center fixed;
+            background-size: cover;
+            margin: 0;
+            padding: 20px;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            color: #f8fafc;
+        }
+
+        .login-card {
+            background-color: rgba(30, 41, 59, 0.92);
+            padding: 35px 30px;
+            border-radius: 12px;
+            box-shadow: 0 15px 35px rgba(0, 0, 0, 0.7);
+            width: 100%;
+            max-width: 400px;
+            border: 1px solid rgba(255, 255, 255, 0.15);
+            backdrop-filter: blur(5px);
+        }
+
+        h2 {
+            margin-top: 0;
+            text-align: center;
+            color: #f8fafc;
+            font-size: 24px;
+            margin-bottom: 25px;
+            font-weight: 700;
+        }
+
+        .form-group {
+            margin-bottom: 18px;
+        }
+
+        label {
+            display: block;
+            margin-bottom: 6px;
+            font-size: 14px;
+            color: #cbd5e1;
+            font-weight: 500;
+        }
+
+        input {
+            width: 100%;
+            padding: 12px 15px;
+            border: 1px solid #475569;
+            border-radius: 6px;
+            background: #0f172a;
+            color: white;
+            font-size: 15px;
+            outline: none;
+            transition: all 0.2s;
+        }
+
+        input:focus {
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.3);
+        }
+
+        .btn-submit {
+            width: 100%;
+            background-color: #3b82f6;
+            color: white;
+            padding: 12px;
+            border: none;
+            border-radius: 6px;
+            font-size: 16px;
+            font-weight: 600;
+            cursor: pointer;
+            transition: background 0.2s;
+            margin-top: 10px;
+            box-shadow: 0 4px 12px rgba(59, 130, 246, 0.4);
+        }
+
+        .btn-submit:hover {
+            background-color: #2563eb;
+        }
+
+        .error-msg {
+            background-color: rgba(239, 68, 68, 0.25);
+            border: 1px solid #ef4444;
+            color: #fca5a5;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 15px;
+            text-align: center;
+        }
+
+        .success-msg {
+            background-color: rgba(34, 197, 94, 0.25);
+            border: 1px solid #22c55e;
+            color: #86efac;
+            padding: 10px;
+            border-radius: 6px;
+            font-size: 13px;
+            margin-bottom: 15px;
             text-align: center;
         }
 
         .register-link {
             text-align: center;
-            margin-top: 20px;
+            margin-top: 22px;
             font-size: 13px;
             color: #94a3b8;
         }
@@ -128,7 +238,7 @@
 <body>
 
 <div class="login-card">
-    <h2>Magacin Alata</h2>
+    <h2>Login</h2>
     
     {% if error %}
     <div class="error-msg">{{ error }}</div>
