@@ -1,243 +1,208 @@
 import os
-import json
-import psycopg2
-from psycopg2.extras import RealDictCursor
 from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
 
 app = Flask(__name__)
-app.secret_key = 'super_tajni_kljuc_magacin_2026'
+app.secret_key = os.environ.get('SECRET_KEY', 'tajni_kljuc_magacin')
 
-DATABASE_URL = os.environ.get('DATABASE_URL')
+# Povezivanje na PostgreSQL bazu preko Render DATABASE_URL-a
+database_url = os.environ.get('DATABASE_URL')
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
 
-def get_db_connection():
-    if not DATABASE_URL:
-        raise Exception("DATABASE_URL nije postavljen u Environment Variables na Renderu!")
-    conn = psycopg2.connect(DATABASE_URL)
-    conn.autocommit = True
-    return conn
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///magacin.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 
-def init_db():
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS users (
-                id SERIAL PRIMARY KEY,
-                username VARCHAR(50) UNIQUE NOT NULL,
-                password VARCHAR(100) NOT NULL,
-                approved BOOLEAN DEFAULT FALSE,
-                is_admin BOOLEAN DEFAULT FALSE
-            );
-        ''')
-        
-        cur.execute('''
-            CREATE TABLE IF NOT EXISTS magacin_data (
-                id INT PRIMARY KEY DEFAULT 1,
-                filename VARCHAR(255),
-                headers TEXT,
-                rows TEXT
-            );
-        ''')
+db = SQLAlchemy(app)
 
-        cur.execute("SELECT id FROM users WHERE username = 'mirzad';")
-        if not cur.fetchone():
-            cur.execute('''
-                INSERT INTO users (username, password, approved, is_admin)
-                VALUES ('mirzad', 'mojalozinka123', TRUE, TRUE);
-            ''')
+# Model baze za korisnike
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    approved = db.Column(db.Boolean, default=False)
+    is_admin = db.Column(db.Boolean, default=False)
 
-        cur.close()
-        conn.close()
-    except Exception as e:
-        print(f"Greška pri inicijalizaciji baze: {e}")
+# Model baze za spremanje stanja lagera (Excel/PDF podaci)
+class LagerData(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(200))
+    headers = db.Column(db.JSON)
+    rows = db.Column(db.JSON)
 
-# Inicijalizacija baze pri pokretanju
-init_db()
+with app.app_context():
+    db.create_all()
+    # Automatski kreiraj admina ako ne postoji
+    admin_user = User.query.filter_by(username='mirzad').first()
+    if not admin_user:
+        hashed_pw = generate_password_hash('admin123')
+        admin = User(username='mirzad', password_hash=hashed_pw, approved=True, is_admin=True)
+        db.session.add(admin)
+        db.session.commit()
 
 @app.route('/')
-def home():
-    if session.get('logged_in'):
+def index():
+    if 'user' in session:
         return redirect(url_for('admin_panel'))
     return redirect(url_for('login'))
 
-@app.route('/ping')
-def ping():
-    return jsonify({'status': 'alive'}), 200
-
 @app.route('/login', methods=['GET', 'POST'])
 def login():
-    error = None
     if request.method == 'POST':
-        username = request.form.get('username', '').strip().lower()
-        password = request.form.get('password', '')
-
-        try:
-            conn = get_db_connection()
-            cur = conn.cursor(cursor_factory=RealDictCursor)
-            cur.execute("SELECT * FROM users WHERE username = %s;", (username,))
-            user = cur.fetchone()
-            cur.close()
-            conn.close()
-
-            if user and user['password'] == password:
-                if not user['approved']:
-                    error = "Vaš račun još nije odobren od strane administratora!"
-                else:
-                    session['logged_in'] = True
-                    session['username'] = username
-                    session['is_admin'] = user['is_admin']
-                    return redirect(url_for('admin_panel'))
-            else:
-                error = "Pogrešno korisničko ime ili lozinka!"
-        except Exception as e:
-            error = f"Greška s bazom podataka: {e}"
-
-    return render_template('login.html', error=error)
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password_hash, password):
+            if not user.approved:
+                return render_template('login.html', error='Vaš račun čekа odobrenje administratora.')
+            
+            session['user'] = user.username
+            session['is_admin'] = user.is_admin
+            return redirect(url_for('admin_panel'))
+        
+        return render_template('login.html', error='Pogrešno korisničko ime ili šifra.')
+    return render_template('login.html')
 
 @app.route('/register', methods=['GET', 'POST'])
 def register():
-    error = None
-    success = None
     if request.method == 'POST':
-        username = request.form.get('username', '').strip().lower()
-        password = request.form.get('password', '')
+        username = request.form.get('username')
+        password = request.form.get('password')
+        
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            return render_template('register.html', error='Korisničko ime već postoji.')
+            
+        hashed_pw = generate_password_hash(password)
+        new_user = User(username=username, password_hash=hashed_pw, approved=False, is_admin=False)
+        db.session.add(new_user)
+        db.session.commit()
+        
+        return render_template('login.html', success='Uspješna registracija! Pričekajte da administrator odobri račun.')
+    return render_template('register.html')
 
-        if not username or not password:
-            error = "Molimo unesite sve podatke!"
-        else:
-            try:
-                conn = get_db_connection()
-                cur = conn.cursor()
-                cur.execute("SELECT id FROM users WHERE username = %s;", (username,))
-                if cur.fetchone():
-                    error = "Korisničko ime je već zauzeto!"
-                else:
-                    cur.execute(
-                        "INSERT INTO users (username, password, approved, is_admin) VALUES (%s, %s, FALSE, FALSE);",
-                        (username, password)
-                    )
-                    success = "Registracija uspješna! Vaš račun čeka odobrenje administratora."
-                cur.close()
-                conn.close()
-            except Exception as e:
-                error = f"Greška s bazom: {e}"
-
-    return render_template('register.html', error=error, success=success)
+@app.route('/admin')
+def admin_panel():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('admin.html', current_user=session['user'], is_admin=session.get('is_admin', False))
 
 @app.route('/logout')
 def logout():
     session.clear()
     return redirect(url_for('login'))
 
-@app.route('/admin')
-def admin_panel():
-    if not session.get('logged_in'):
-        return redirect(url_for('login'))
-    return render_template('admin.html', is_admin=session.get('is_admin', False), current_user=session.get('username'))
-
-@app.route('/api/data', methods=['GET'])
-def get_data():
-    if not session.get('logged_in'):
-        return jsonify({'error': 'Neovlašten pristup'}), 403
-
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT filename, headers, rows FROM magacin_data WHERE id = 1;")
-        row = cur.fetchone()
-        cur.close()
-        conn.close()
-
-        if row and row['rows']:
+# API za dohvat i spremanje podataka lagera
+@app.route('/api/data', methods=['GET', 'POST'])
+def handle_data():
+    if 'user' not in session:
+        return jsonify({'error': 'Unauthorized'}), 403
+        
+    if request.method == 'POST':
+        if not session.get('is_admin'):
+            return jsonify({'success': False, 'error': 'Samo administrator može mijenjati podatke.'}), 403
+            
+        req_data = request.json
+        # Očisti stare podatke i spremi nove
+        LagerData.query.delete()
+        
+        new_lager = LagerData(
+            filename=req_data.get('filename'),
+            headers=req_data.get('headers'),
+            rows=req_data.get('rows')
+        )
+        db.session.add(new_lager)
+        db.session.commit()
+        return jsonify({'success': True})
+        
+    else:
+        lager = LagerData.query.first()
+        if lager:
             return jsonify({
-                "filename": row['filename'],
-                "headers": json.loads(row['headers']),
-                "rows": json.loads(row['rows'])
+                'filename': lager.filename,
+                'headers': lager.headers,
+                'rows': lager.rows
             })
-        else:
-            return jsonify({
-                "filename": "",
-                "headers": ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"],
-                "rows": []
-            })
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+        return jsonify({'rows': []})
 
-@app.route('/api/data', methods=['POST'])
-def save_data():
-    if not session.get('logged_in'):
-        return jsonify({'error': 'Neovlašten pristup'}), 403
-
-    req_data = request.get_json(silent=True) or {}
-    filename = req_data.get('filename', 'Dokument')
-    headers_str = json.dumps(req_data.get('headers', []))
-    rows_str = json.dumps(req_data.get('rows', []))
-
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor()
-        cur.execute('''
-            INSERT INTO magacin_data (id, filename, headers, rows)
-            VALUES (1, %s, %s, %s)
-            ON CONFLICT (id) DO UPDATE 
-            SET filename = EXCLUDED.filename,
-                headers = EXCLUDED.headers,
-                rows = EXCLUDED.rows;
-        ''', (filename, headers_str, rows_str))
-        cur.close()
-        conn.close()
-        return jsonify({'success': True, 'count': len(req_data.get('rows', []))})
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
-
+# API za upravljanje korisnicima (samo admin)
 @app.route('/api/users', methods=['GET'])
 def get_users():
-    if not session.get('logged_in') or not session.get('is_admin'):
-        return jsonify({'error': 'Neovlašten pristup'}), 403
+    if 'user' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
+        
+    users = User.query.all()
+    users_list = [{
+        'username': u.username,
+        'approved': u.approved,
+        'is_admin': u.is_admin
+    } for u in users]
     
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT username, approved, is_admin FROM users ORDER BY id ASC;")
-        users_list = cur.fetchall()
-        cur.close()
-        conn.close()
-        return jsonify(users_list)
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+    return jsonify(users_list)
 
 @app.route('/api/users/toggle', methods=['POST'])
 def toggle_user():
-    if not session.get('logged_in') or not session.get('is_admin'):
-        return jsonify({'error': 'Neovlašten pristup'}), 403
+    if 'user' not in session or not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        
+    data = request.json
+    username = data.get('username')
+    user = User.query.filter_by(username=username).first()
+    
+    if user:
+        if user.is_admin:
+            return jsonify({'success': False, 'error': 'Ne možeš mijenjati status administratora!'}), 400
+        user.approved = not user.approved
+        db.session.commit()
+        return jsonify({'success': True})
+        
+    return jsonify({'success': False, 'error': 'Korisnik nije pronađen.'}), 404
 
-    req_data = request.get_json(silent=True) or {}
-    username = req_data.get('username')
+@app.route('/api/users/delete', methods=['POST'])
+def delete_user():
+    if 'user' not in session or not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        
+    data = request.json
+    username = data.get('username')
+    
+    if username == session.get('user'):
+        return jsonify({'success': False, 'error': 'Ne možeš obrisati vlastiti administrator račun!'}), 400
+        
+    user = User.query.filter_by(username=username).first()
+    if user:
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({'success': True})
+        
+    return jsonify({'success': False, 'error': 'Korisnik nije pronađen.'}), 404
 
-    try:
-        conn = get_db_connection()
-        cur = conn.cursor(cursor_factory=RealDictCursor)
-        cur.execute("SELECT is_admin, approved FROM users WHERE username = %s;", (username,))
-        user = cur.fetchone()
+@app.route('/api/users/reset-password', methods=['POST'])
+def reset_password():
+    if 'user' not in session or not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
+        
+    data = request.json
+    username = data.get('username')
+    new_password = data.get('new_password')
+    
+    if not new_password:
+        return jsonify({'success': False, 'error': 'Nova šifra ne može biti prazna.'}), 400
+        
+    user = User.query.filter_by(username=username).first()
+    if user:
+        user.password_hash = generate_password_hash(new_password)
+        db.session.commit()
+        return jsonify({'success': True})
+        
+    return jsonify({'success': False, 'error': 'Korisnik nije pronađen.'}), 404
 
-        if user:
-            if user['is_admin']:
-                cur.close()
-                conn.close()
-                return jsonify({'error': 'Nije moguće promijeniti status glavnog administratora!'}), 400
-            
-            new_status = not user['approved']
-            cur.execute("UPDATE users SET approved = %s WHERE username = %s;", (new_status, username))
-            cur.close()
-            conn.close()
-            return jsonify({'success': True, 'approved': new_status})
-
-        cur.close()
-        conn.close()
-        return jsonify({'error': 'Korisnik nije pronađen'}), 404
-    except Exception as e:
-        return jsonify({'error': str(e)}), 500
+# Ruta za sprečavanje uspavljivanja poslužitelja na Renderu
+@app.route('/ping')
+def ping():
+    return jsonify({'status': 'active'}), 200
 
 if __name__ == '__main__':
-    app.run(debug=True)
+    app.run(host='0.0.0.0', port=5000)
