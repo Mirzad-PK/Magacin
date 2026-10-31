@@ -21,18 +21,15 @@
 
         * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         
-        /* Pozadina sa bočnim industrijskim vizualima i ispunjenjem do kraja */
+        /* Pozadina sa moćnim industrijskim vizualima */
         body { 
-            background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.85)), 
+            background: linear-gradient(rgba(15, 23, 42, 0.82), rgba(15, 23, 42, 0.82)), 
                         url('https://images.unsplash.com/photo-1565043589221-1a6fd9ae45c7?auto=format&fit=crop&w=1920&q=80') no-repeat center center fixed;
             background-size: cover;
             margin: 0; 
             padding: 20px; 
             color: var(--text-main); 
             min-height: 100vh;
-            display: flex;
-            flex-direction: column;
-            justify-content: stretch;
         }
         
         .app-wrapper { 
@@ -42,7 +39,6 @@
             display: flex; 
             flex-direction: column; 
             gap: 20px; 
-            flex: 1;
         }
 
         .top-navbar {
@@ -53,7 +49,7 @@
             display: flex;
             flex-direction: column;
             gap: 12px;
-            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.3);
+            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.4);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
@@ -77,17 +73,16 @@
         .tab-btn.active { background: var(--accent-color); color: white; border-color: var(--accent-color); }
 
         .tab-content { display: none; }
-        .tab-content.active { display: flex; flex-direction: column; flex: 1; }
+        .tab-content.active { display: block; }
 
+        /* Prozor produžen prema dolje s predivnom sjenom */
         .main-card {
             background: var(--card-bg);
             border-radius: 12px;
             padding: 25px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.3);
+            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
             border: 1px solid var(--border-color);
-            display: flex;
-            flex-direction: column;
-            flex: 1;
+            min-height: 75vh;
         }
 
         .controls { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
@@ -133,4 +128,445 @@
 
         .status-info { font-size: 13px; color: var(--text-light); margin-bottom: 15px; font-weight: 500; }
         
-        /* Tab
+        /* Tablica proširena prema dolje sa stabilnim skrolom */
+        .table-container { width: 100%; overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; max-height: 68vh; }
+        table { width: 100%; border-collapse: collapse; background: white; text-align: left; table-layout: auto; }
+        th { 
+            background-color: #1e293b; 
+            color: #f8fafc; 
+            padding: 12px 16px; 
+            font-size: 13px; 
+            font-weight: 600;
+            white-space: nowrap; 
+            position: sticky; 
+            top: 0; 
+            z-index: 10; 
+        }
+        td { padding: 12px 16px; border-bottom: 1px solid var(--border-color); font-size: 14px; color: #1e293b; word-break: break-word; }
+        
+        tr:nth-child(even) { background-color: #f8fafc; }
+        tr:hover { background-color: #f1f5f9; }
+        mark { background-color: #fef08a; color: #854d0e; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        .no-data { text-align: center; padding: 40px; color: var(--text-light); font-style: italic; font-size: 14px; }
+
+        .badge-approved { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
+        .badge-pending { background: #fef9c3; color: #854d0e; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
+        .btn-approve { background: #22c55e; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
+        .btn-approve:hover { background: #16a34a; }
+        .btn-block { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
+        .btn-block:hover { background: #dc2626; }
+
+        @media (min-width: 768px) {
+            body { padding: 30px; }
+            .top-navbar { flex-direction: row; justify-content: space-between; align-items: center; padding: 20px 30px; }
+            .nav-tabs { border-top: none; padding-top: 0; }
+            .controls { flex-direction: row; align-items: center; justify-content: space-between; }
+            .search-box { flex: 1; }
+            h2 { font-size: 22px; }
+        }
+    </style>
+</head>
+<body>
+
+<div class="app-wrapper">
+    <!-- Gornja navigacijska traka -->
+    <div class="top-navbar">
+        <div class="nav-brand">
+            <h2>Magacin Alata — PK Praezision Technik</h2>
+        </div>
+        <div class="user-panel">
+            <span class="user-badge">👤 {{ current_user }}</span>
+            <a href="/logout" class="logout-btn">Odjava</a>
+        </div>
+        <div class="nav-tabs">
+            <button class="tab-btn active" onclick="switchTab('searchTab', this)">Pretraga Alata</button>
+            {% if is_admin %}
+            <button class="tab-btn" onclick="switchTab('usersTab', this); loadUsers();">Upravljanje Korisnicima</button>
+            {% endif %}
+        </div>
+    </div>
+
+    <!-- Glavni sadržaj -->
+    <div class="main-card">
+        <!-- TAB 1: PRETRAGA ALATA -->
+        <div id="searchTab" class="tab-content active">
+            <div class="controls">
+                <!-- SAMO ADMIN VIDI DUGME ZA UČITAVANJE -->
+                {% if is_admin %}
+                <label class="file-upload-btn">
+                    📁 Učitaj Novi Dokument
+                    <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .pdf">
+                </label>
+                {% else %}
+                <div></div>
+                {% endif %}
+
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Pretraži šifru, naziv, materijal ili ladicu..." disabled>
+                </div>
+            </div>
+
+            <div class="status-info" id="statusInfo">Učitavam sačuvane podatke iz baze...</div>
+
+            <div class="table-container">
+                <div id="tableOutput" class="no-data">Učitavam lager...</div>
+            </div>
+        </div>
+
+        <!-- TAB 2: UPRAVLJANJE KORISNICIMA (SAMO ADMIN) -->
+        {% if is_admin %}
+        <div id="usersTab" class="tab-content">
+            <h3 style="margin-top: 0; color: #1e293b;">Popis Registriranih Korisnika</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Korisničko Ime</th>
+                            <th>Status</th>
+                            <th>Uloga</th>
+                            <th>Akcija</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <tr><td colspan="4" class="no-data">Učitavam korisnike...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+        {% endif %}
+    </div>
+</div>
+
+<script>
+    function switchTab(tabId, btn) {
+        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+        document.getElementById(tabId).classList.add('active');
+        btn.classList.add('active');
+    }
+
+    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+
+    let rawData = [];
+    let headers = ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
+
+    const fileInput = document.getElementById('fileInput');
+    const searchInput = document.getElementById('searchInput');
+    const tableOutput = document.getElementById('tableOutput');
+    const statusInfo = document.getElementById('statusInfo');
+
+    window.addEventListener('DOMContentLoaded', function() {
+        loadServerData();
+    });
+
+    function loadServerData() {
+        statusInfo.textContent = "Učitavam sačuvani lager iz baze podataka...";
+        fetch('/api/data')
+            .then(res => res.json())
+            .then(data => {
+                if (data && data.rows && data.rows.length > 0) {
+                    headers = data.headers && data.headers.length > 0 ? data.headers : ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
+                    rawData = data.rows;
+                    searchInput.disabled = false;
+                    statusInfo.textContent = `Aktivni lager: "${data.filename}" — Ukupno zapisa: ${rawData.length}`;
+                    renderTable(rawData);
+                } else {
+                    statusInfo.textContent = "U bazi nema sačuvanog lagera. Učitajte novi Excel ili PDF.";
+                    tableOutput.innerHTML = '<div class="no-data">Baza je prazna. Učitajte dokument sa računara.</div>';
+                }
+            })
+            .catch(err => {
+                statusInfo.textContent = "Greška pri dohvaćanju lagera iz baze.";
+            });
+    }
+
+    function saveServerData(filename, currentHeaders, rows) {
+        statusInfo.textContent = "Spremam lager u bazu podataka...";
+        fetch('/api/data', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                filename: filename,
+                headers: currentHeaders,
+                rows: rows
+            })
+        })
+        .then(res => res.json())
+        .then(res => {
+            if (res.success) {
+                statusInfo.textContent = `Lager "${filename}" (${rows.length} zapisa) uspješno spremljen i sinkroniziran!`;
+            } else {
+                statusInfo.textContent = "Greška pri spremanju u bazu: " + (res.error || "");
+            }
+        })
+        .catch(err => {
+            statusInfo.textContent = "Mrežna greška pri spremanju u bazu.";
+        });
+    }
+
+    if (fileInput) {
+        fileInput.addEventListener('change', function (e) {
+            const file = e.target.files[0];
+            if (!file) return;
+
+            statusInfo.textContent = `Obrađujem dokument: "${file.name}"...`;
+
+            if (file.name.toLowerCase().endsWith('.pdf')) {
+                processPDF(file);
+            } else {
+                processExcelOrCSV(file);
+            }
+        });
+    }
+
+    function processExcelOrCSV(file) {
+        const reader = new FileReader();
+        reader.onload = function (event) {
+            const data = new Uint8Array(event.target.result);
+            const workbook = XLSX.read(data, { type: 'array' });
+            const firstSheetName = workbook.SheetNames[0];
+            const worksheet = workbook.Sheets[firstSheetName];
+            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+
+            if (jsonData.length > 0) {
+                headers = ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
+                
+                rawData = jsonData.slice(1).filter(row => row.length >= 2).map(row => {
+                    return [
+                        row[0] !== undefined ? row[0] : "-",
+                        row[1] !== undefined ? row[1] : "-",
+                        row[2] !== undefined ? row[2] : "-",
+                        row[3] !== undefined ? row[3] : "-",
+                        row[4] !== undefined ? row[4] : "-"
+                    ];
+                });
+
+                searchInput.disabled = false;
+                searchInput.value = '';
+                renderTable(rawData);
+                saveServerData(file.name, headers, rawData);
+            } else {
+                tableOutput.innerHTML = '<div class="no-data">Dokument je prazan.</div>';
+            }
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    function processPDF(file) {
+        const reader = new FileReader();
+        reader.onload = function (event) {
+            const typedarray = new Uint8Array(event.target.result);
+
+            pdfjsLib.getDocument(typedarray).promise.then(async function (pdf) {
+                headers = ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
+                rawData = [];
+
+                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
+                    const page = await pdf.getPage(pageNum);
+                    const textContent = await page.getTextContent();
+                    const viewport = page.getViewport({ scale: 1.0 });
+                    const pageWidth = viewport.width;
+
+                    let rowsMap = {};
+
+                    textContent.items.forEach(item => {
+                        let str = item.str.trim();
+                        if (!str) return;
+
+                        let rawY = Math.round(item.transform[5]);
+                        let foundY = Object.keys(rowsMap).find(y => Math.abs(parseInt(y) - rawY) < 5);
+                        let targetY = foundY ? foundY : rawY;
+
+                        if (!rowsMap[targetY]) rowsMap[targetY] = [];
+                        rowsMap[targetY].push({ text: str, x: item.transform[4] });
+                    });
+
+                    let sortedY = Object.keys(rowsMap).sort((a, b) => parseInt(b) - parseInt(a));
+
+                    sortedY.forEach(y => {
+                        let items = rowsMap[y].sort((a, b) => a.x - b.x);
+                        let fullLineText = items.map(it => it.text).join(' ');
+
+                        if (/STANJE IZLAZNOG|PK Praezision|Datum ispisa|Mirzad Mutapcic|Ladica\s+Sifra|Sifra materijala|Naziv alata\s+Kolicina|Strana\s+\d+|info@pk|www\.pk|Bosna i Hercegovina|Gradacac/i.test(fullLineText)) {
+                            return;
+                        }
+
+                        let colLadica = [];
+                        let colSifraAlata = [];
+                        let colSifraMat = [];
+                        let colNazivAlata = [];
+                        let colKolicina = [];
+
+                        items.forEach(it => {
+                            let relX = it.x / pageWidth;
+
+                            if (relX < 0.12) {
+                                colLadica.push(it.text);
+                            } else if (relX >= 0.12 && relX < 0.38) {
+                                colSifraAlata.push(it.text);
+                            } else if (relX >= 0.38 && relX < 0.62) {
+                                colSifraMat.push(it.text);
+                            } else if (relX >= 0.62 && relX < 0.88) {
+                                colNazivAlata.push(it.text);
+                            } else {
+                                colKolicina.push(it.text);
+                            }
+                        });
+
+                        let ladicaStr = colLadica.join(' ').trim();
+                        let sifraAlataStr = colSifraAlata.join(' ').trim();
+                        let sifraMatStr = colSifraMat.join(' ').trim();
+                        let nazivAlataStr = colNazivAlata.join(' ').trim();
+                        let kolicinaStr = colKolicina.join(' ').trim();
+
+                        if (/^O-OP-/i.test(sifraAlataStr) && !sifraMatStr) {
+                            sifraMatStr = sifraAlataStr;
+                            sifraAlataStr = "";
+                        }
+
+                        if (ladicaStr || sifraAlataStr || sifraMatStr || nazivAlataStr) {
+                            rawData.push([
+                                ladicaStr || "-",
+                                sifraAlataStr || "-",
+                                sifraMatStr || "-",
+                                nazivAlataStr || "-",
+                                kolicinaStr || "-"
+                            ]);
+                        }
+                    });
+                }
+
+                if (rawData.length > 0) {
+                    searchInput.disabled = false;
+                    searchInput.value = '';
+                    renderTable(rawData);
+                    saveServerData(file.name, headers, rawData);
+                } else {
+                    tableOutput.innerHTML = '<div class="no-data">Nije moguće automatski izdvojiti stavke iz ovog PDF-a.</div>';
+                }
+            }).catch(function (error) {
+                statusInfo.textContent = "Greška pri otvaranju PDF dokumenta.";
+                tableOutput.innerHTML = '<div class="no-data">Greška pri čitanju PDF-a.</div>';
+            });
+        };
+        reader.readAsArrayBuffer(file);
+    }
+
+    if (searchInput) {
+        searchInput.addEventListener('input', function () {
+            const query = this.value.trim().toLowerCase();
+
+            if (!query) {
+                renderTable(rawData);
+                statusInfo.textContent = `Ukupno zapisa: ${rawData.length}`;
+                return;
+            }
+
+            const filteredData = rawData.filter(row => {
+                return row.some(cell => {
+                    return cell !== null && cell !== undefined && cell.toString().toLowerCase().includes(query);
+                });
+            });
+
+            statusInfo.textContent = `Pronađeno zapisa: ${filteredData.length} od ukupno ${rawData.length}`;
+            renderTable(filteredData, query);
+        });
+    }
+
+    function renderTable(data, highlightQuery = '') {
+        if (data.length === 0) {
+            tableOutput.innerHTML = '<div class="no-data">Nema rezultata koji odgovaraju pretrazi.</div>';
+            return;
+        }
+
+        let html = '<table><thead><tr>';
+        headers.forEach(header => {
+            html += `<th>${header !== undefined ? header : ''}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+
+        data.forEach(row => {
+            html += '<tr>';
+            for (let i = 0; i < headers.length; i++) {
+                let cellValue = row[i] !== undefined && row[i] !== null ? row[i].toString() : '';
+                
+                if (highlightQuery && cellValue.toLowerCase().includes(highlightQuery)) {
+                    const regex = new RegExp(`(${escapeRegExp(highlightQuery)})`, 'gi');
+                    cellValue = cellValue.replace(regex, '<mark>$1</mark>');
+                }
+
+                html += `<td>${cellValue}</td>`;
+            }
+            html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        tableOutput.innerHTML = html;
+    }
+
+    function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+    }
+
+    function loadUsers() {
+        fetch('/api/users')
+            .then(res => res.json())
+            .then(data => {
+                const tbody = document.getElementById('usersTableBody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+
+                data.forEach(u => {
+                    let statusBadge = u.approved ? '<span class="badge-approved">Odobren</span>' : '<span class="badge-pending">Na čekanju</span>';
+                    let roleStr = u.is_admin ? 'Administrator' : 'Korisnik';
+                    let actionBtn = '';
+
+                    if (!u.is_admin) {
+                        actionBtn = u.approved 
+                            ? `<button class="btn-block" onclick="toggleUser('${u.username}')">Blokiraj</button>` 
+                            : `<button class="btn-approve" onclick="toggleUser('${u.username}')">Odobri</button>`;
+                    } else {
+                        actionBtn = '<em>Glavni Admin</em>';
+                    }
+
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><strong>${u.username}</strong></td>
+                            <td>${statusBadge}</td>
+                            <td>${roleStr}</td>
+                            <td>${actionBtn}</td>
+                        </tr>
+                    `;
+                });
+            });
+    }
+
+    function toggleUser(username) {
+        fetch('/api/users/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                loadUsers();
+            } else {
+                alert(data.error || 'Greška pri promjeni statusa!');
+            }
+        });
+    }
+
+    // Lagani pozadinski ping svakih 5 minuta - drži Render budnim bez opterećenja baze
+    setInterval(function() {
+        fetch('/ping')
+            .then(res => res.json())
+            .then(data => {
+                console.log("Server je budan i aktivan.");
+            })
+            .catch(err => console.log("Ping greška:", err));
+    }, 5 * 60 * 1000);
+</script>
+
+</body>
+</html>
