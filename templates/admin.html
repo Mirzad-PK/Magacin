@@ -16,40 +16,40 @@
             --text-main: #334155;
             --text-light: #64748b;
             --border-color: #e2e8f0;
-            --card-bg: #ffffff;
         }
 
         * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         
-        /* Pozadina sa reznim alatima, burgijama i CNC mašinama sa strane */
+        /* Pozadina sa reznim alatima, burgijama i CNC mašinama preko cijelog ekrana */
         body { 
-            background: linear-gradient(rgba(15, 23, 42, 0.85), rgba(15, 23, 42, 0.85)), 
+            background: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.88)), 
                         url('https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=1920&q=80') no-repeat center center fixed;
             background-size: cover;
             margin: 0; 
-            padding: 20px; 
+            padding: 10px; 
             color: var(--text-main); 
             min-height: 100vh;
         }
         
+        /* Glavni omotač se proteže preko cijele širine ekrana */
         .app-wrapper { 
-            max-width: 1500px; 
+            max-width: 100%; 
             width: 100%;
             margin: 0 auto; 
             display: flex; 
             flex-direction: column; 
-            gap: 20px; 
+            gap: 15px; 
         }
 
         .top-navbar {
             background-color: var(--primary-bg);
             color: white;
-            padding: 15px 25px;
-            border-radius: 12px;
+            padding: 15px 20px;
+            border-radius: 10px;
             display: flex;
             flex-direction: column;
             gap: 12px;
-            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.4);
+            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.5);
             border: 1px solid rgba(255, 255, 255, 0.1);
         }
 
@@ -59,10 +59,10 @@
             align-items: center;
         }
 
-        .nav-brand h2 { margin: 0; font-size: 20px; letter-spacing: 0.5px; color: #f8fafc; display: flex; align-items: center; gap: 10px; }
+        .nav-brand h2 { margin: 0; font-size: 18px; letter-spacing: 0.5px; color: #f8fafc; display: flex; align-items: center; gap: 10px; }
         .nav-brand h2::before { content: ""; display: inline-block; width: 10px; height: 10px; background-color: #3b82f6; border-radius: 50%; }
 
-        .user-panel { display: flex; align-items: center; gap: 15px; font-size: 14px; flex-wrap: wrap; }
+        .user-panel { display: flex; align-items: center; gap: 12px; font-size: 14px; flex-wrap: wrap; }
         .user-badge { background: var(--secondary-bg); padding: 5px 12px; border-radius: 20px; border: 1px solid #334155; color: #cbd5e1; }
         .logout-btn { background-color: #ef4444; color: white; padding: 6px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; transition: background 0.2s; }
         .logout-btn:hover { background-color: #dc2626; }
@@ -73,19 +73,17 @@
         .tab-btn.active { background: var(--accent-color); color: white; border-color: var(--accent-color); }
 
         .tab-content { display: none; }
-        .tab-content.active { display: block; }
+        .tab-content.active { display: block; width: 100%; }
 
-        /* Prozor produžen prema dolje i ispunjen */
-        .main-card {
-            background: var(--card-bg);
-            border-radius: 12px;
-            padding: 25px;
-            box-shadow: 0 10px 30px rgba(0,0,0,0.4);
-            border: 1px solid var(--border-color);
-            min-height: 75vh;
+        /* Nema više klasične bijele kartice s marginama – sadržaj ide preko cijelog ekrana */
+        .main-container {
+            width: 100%;
+            display: flex;
+            flex-direction: column;
+            gap: 15px;
         }
 
-        .controls { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
+        .controls { display: flex; flex-direction: column; gap: 12px; width: 100%; }
         
         .file-upload-btn { 
             display: inline-flex; 
@@ -94,13 +92,14 @@
             gap: 8px;
             background-color: var(--accent-color); 
             color: white; 
-            padding: 11px 20px; 
+            padding: 12px 20px; 
             border-radius: 8px; 
             cursor: pointer; 
             font-weight: 600; 
             font-size: 14px; 
-            box-shadow: 0 2px 5px rgba(59, 130, 246, 0.3);
+            box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
             transition: background 0.2s, transform 0.1s; 
+            width: 100%;
         }
         .file-upload-btn:hover { background-color: var(--accent-hover); }
         .file-upload-btn input[type="file"] { display: none; }
@@ -113,10 +112,11 @@
             border: 2px solid var(--border-color); 
             border-radius: 8px; 
             outline: none; 
-            background: #f8fafc;
+            background: rgba(255, 255, 255, 0.95);
             transition: all 0.2s; 
+            box-shadow: 0 4px 10px rgba(0,0,0,0.1);
         }
-        .search-box input:focus { border-color: var(--accent-color); background: white; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+        .search-box input:focus { border-color: var(--accent-color); background: white; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
         .search-box::before {
             content: "🔍";
             position: absolute;
@@ -126,14 +126,15 @@
             font-size: 14px;
         }
 
-        .status-info { font-size: 13px; color: var(--text-light); margin-bottom: 15px; font-weight: 500; }
+        .status-info { font-size: 13px; color: #cbd5e1; font-weight: 500; text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
         
-        .table-container { width: 100%; overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; max-height: 68vh; }
-        table { width: 100%; border-collapse: collapse; background: white; text-align: left; table-layout: auto; }
+        /* Tablica preko cijelog ekrana sa velikom visinom pregleda */
+        .table-container { width: 100%; overflow-x: auto; border: 1px solid rgba(255,255,255,0.15); border-radius: 10px; max-height: 76vh; background: white; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
+        table { width: 100%; border-collapse: collapse; text-align: left; table-layout: auto; }
         th { 
             background-color: #1e293b; 
             color: #f8fafc; 
-            padding: 12px 16px; 
+            padding: 14px 16px; 
             font-size: 13px; 
             font-weight: 600;
             white-space: nowrap; 
@@ -146,7 +147,7 @@
         tr:nth-child(even) { background-color: #f8fafc; }
         tr:hover { background-color: #f1f5f9; }
         mark { background-color: #fef08a; color: #854d0e; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
-        .no-data { text-align: center; padding: 40px; color: var(--text-light); font-style: italic; font-size: 14px; }
+        .no-data { text-align: center; padding: 40px; color: var(--text-light); font-style: italic; font-size: 14px; background: white; }
 
         .badge-approved { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
         .badge-pending { background: #fef9c3; color: #854d0e; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
@@ -156,18 +157,20 @@
         .btn-block:hover { background: #dc2626; }
 
         @media (min-width: 768px) {
-            body { padding: 30px; }
-            .top-navbar { flex-direction: row; justify-content: space-between; align-items: center; padding: 20px 30px; }
+            body { padding: 15px 25px; }
+            .top-navbar { flex-direction: row; justify-content: space-between; align-items: center; padding: 18px 25px; }
             .nav-tabs { border-top: none; padding-top: 0; }
             .controls { flex-direction: row; align-items: center; justify-content: space-between; }
+            .file-upload-btn { width: auto; }
             .search-box { flex: 1; }
-            h2 { font-size: 22px; }
+            .nav-brand h2 { font-size: 20px; }
         }
     </style>
 </head>
 <body>
 
 <div class="app-wrapper">
+    <!-- Gornja navigacijska traka -->
     <div class="top-navbar">
         <div class="nav-brand">
             <h2>Magacin Alata — PK Praezision Technik</h2>
@@ -184,9 +187,12 @@
         </div>
     </div>
 
-    <div class="main-card">
+    <!-- Glavni sadržaj preko cijelog ekrana -->
+    <div class="main-container">
+        <!-- TAB 1: PRETRAGA ALATA -->
         <div id="searchTab" class="tab-content active">
             <div class="controls">
+                <!-- SAMO ADMIN VIDI DUGME ZA UČITAVANJE -->
                 {% if is_admin %}
                 <label class="file-upload-btn">
                     📁 Učitaj Novi Dokument
@@ -208,9 +214,9 @@
             </div>
         </div>
 
+        <!-- TAB 2: UPRAVLJANJE KORISNICIMA (SAMO ADMIN) -->
         {% if is_admin %}
         <div id="usersTab" class="tab-content">
-            <h3 style="margin-top: 0; color: #1e293b;">Popis Registriranih Korisnika</h3>
             <div class="table-container">
                 <table>
                     <thead>
