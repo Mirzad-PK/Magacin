@@ -20,7 +20,6 @@
 
         * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         
-        /* Čista profesionalna plava pozadina preko cijelog ekrana */
         body { 
             background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #090d16 100%);
             margin: 0; 
@@ -174,7 +173,6 @@
 <body>
 
 <div class="app-wrapper">
-    <!-- Gornja navigacijska traka -->
     <div class="top-navbar">
         <div class="nav-brand">
             <h2>Magacin Alata — PK Praezision Technik</h2>
@@ -191,9 +189,7 @@
         </div>
     </div>
 
-    <!-- Glavni sadržaj preko cijelog ekrana -->
     <div class="main-container">
-        <!-- TAB 1: PRETRAGA ALATA -->
         <div id="searchTab" class="tab-content active">
             <div class="controls">
                 {% if is_admin %}
@@ -217,7 +213,6 @@
             </div>
         </div>
 
-        <!-- TAB 2: UPRAVLJANJE KORISNICIMA (SAMO ADMIN) -->
         {% if is_admin %}
         <div id="usersTab" class="tab-content">
             <div class="table-container">
@@ -227,7 +222,7 @@
                             <th>Korisničko Ime</th>
                             <th>Status</th>
                             <th>Uloga</th>
-                            <th>Akcije (Odobri / Reset Šifre / Obriši)</th>
+                            <th>Akcije</th>
                         </tr>
                     </thead>
                     <tbody id="usersTableBody">
@@ -458,3 +453,159 @@
     if (searchInput) {
         searchInput.addEventListener('input', function () {
             const query = this.value.trim().toLowerCase();
+
+            if (!query) {
+                renderTable(rawData);
+                statusInfo.textContent = `Ukupno zapisa: ${rawData.length}`;
+                return;
+            }
+
+            const filteredData = rawData.filter(row => {
+                return row.some(cell => {
+                    return cell !== null && cell !== undefined && cell.toString().toLowerCase().includes(query);
+                });
+            });
+
+            statusInfo.textContent = `Pronađeno zapisa: ${filteredData.length} od ukupno ${rawData.length}`;
+            renderTable(filteredData, query);
+        });
+    }
+
+    function renderTable(data, highlightQuery = '') {
+        if (data.length === 0) {
+            tableOutput.innerHTML = '<div class="no-data">Nema rezultata koji odgovaraju pretrazi.</div>';
+            return;
+        }
+
+        let html = '<table><thead><tr>';
+        headers.forEach(header => {
+            html += `<th>${header !== undefined ? header : ''}</th>`;
+        });
+        html += '</tr></thead><tbody>';
+
+        data.forEach(row => {
+            html += '<tr>';
+            for (let i = 0; i < headers.length; i++) {
+                let cellValue = row[i] !== undefined && row[i] !== null ? row[i].toString() : '';
+                
+                if (highlightQuery && cellValue.toLowerCase().includes(highlightQuery)) {
+                    const regex = new RegExp(`(${escapeRegExp(highlightQuery)})`, 'gi');
+                    cellValue = cellValue.replace(regex, '<mark>$1</mark>');
+                }
+
+                html += `<td>${cellValue}</td>`;
+            }
+            html += '</tr>';
+        });
+
+        html += '</tbody></table>';
+        tableOutput.innerHTML = html;
+    }
+
+    function escapeRegExp(string) {
+        return string.replace(/[.*+?^${}()|[\]\tabs]/g, '\\$&');
+    }
+
+    function loadUsers() {
+        fetch('/api/users')
+            .then(res => res.json())
+            .then(data => {
+                const tbody = document.getElementById('usersTableBody');
+                if (!tbody) return;
+                tbody.innerHTML = '';
+
+                data.forEach(u => {
+                    let statusBadge = u.approved ? '<span class="badge-approved">Odobren</span>' : '<span class="badge-pending">Na čekanju</span>';
+                    let roleStr = u.is_admin ? 'Administrator' : 'Korisnik';
+                    let actionBtns = '';
+
+                    if (!u.is_admin) {
+                        let toggleBtn = u.approved 
+                            ? `<button class="btn-block" onclick="toggleUser('${u.username}')">Blokiraj</button>` 
+                            : `<button class="btn-approve" onclick="toggleUser('${u.username}')">Odobri</button>`;
+                        
+                        let resetBtn = `<button class="btn-reset" onclick="resetUserPassword('${u.username}')">Reset Šifre</button>`;
+                        let deleteBtn = `<button class="btn-delete" onclick="deleteUser('${u.username}')">Obriši</button>`;
+                        
+                        actionBtns = `<div class="action-buttons">${toggleBtn}${resetBtn}${deleteBtn}</div>`;
+                    } else {
+                        actionBtns = '<em>Glavni Admin</em>';
+                    }
+
+                    tbody.innerHTML += `
+                        <tr>
+                            <td><strong>${u.username}</strong></td>
+                            <td>${statusBadge}</td>
+                            <td>${roleStr}</td>
+                            <td>${actionBtns}</td>
+                        </tr>
+                    `;
+                });
+            });
+    }
+
+    function toggleUser(username) {
+        fetch('/api/users/toggle', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                loadUsers();
+            } else {
+                alert(data.error || 'Greška pri promjeni statusa!');
+            }
+        });
+    }
+
+    function deleteUser(username) {
+        if (!confirm(`Jesi li siguran da želiš trajno obrisati korisnika: ${username}?`)) return;
+        
+        fetch('/api/users/delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                loadUsers();
+            } else {
+                alert(data.error || 'Greška pri brisanju korisnika.');
+            }
+        });
+    }
+
+    function resetUserPassword(username) {
+        let newPass = prompt(`Unesi novu šifru za korisnika ${username}:`);
+        if (!newPass) return;
+        
+        fetch('/api/users/reset-password', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username: username, new_password: newPass })
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                alert('Šifra je uspješno promijenjena!');
+            } else {
+                alert(data.error || 'Greška pri promjeni šifre.');
+            }
+        });
+    }
+
+    setInterval(function() {
+        fetch('/ping')
+            .then(res => res.json())
+            .then(data => {
+                console.log("Server je budan i aktivan.");
+            })
+            .catch(err => console.log("Ping greška:", err));
+    }, 5 * 60 * 1000);
+</script>
+
+</body>
+</html>
