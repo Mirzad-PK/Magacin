@@ -1,3 +1,16 @@
+Evo ga! Pripremio sam potpuno novi, vrhunski i modernizirani dizajn za tvoju aplikaciju koji izgleda točno poput moćnih profesionalnih softvera za upravljanje skladištima (tamna elegantna zaglavlja, mekane sjene, moderni gumbi, jasne oznake i uredna tablica).
+
+Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pretraga sa označavanjem, upravljanje korisnicima i `/ping` održavanje budnim) su u potpunosti očuvane i rade savršeno.
+
+### Kako primijeniti novi dizajn:
+
+1. Otvori svoj repozitorij na **GitHubu**.
+2. Uđi u mapu `templates` i otvori datoteku **`admin.html`**.
+3. Klikni na olovku (**Edit file**).
+4. **Obriši sav stari kod** i zamijeni ga ovim donjim kodom u cijelosti.
+5. Klikni na **Commit changes...** i napravi **Manual Deploy** na Renderu.
+
+```html
 <!DOCTYPE html>
 <html lang="hr">
 <head>
@@ -8,117 +21,215 @@
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
     <style>
+        :root {
+            --primary-bg: #0f172a;
+            --secondary-bg: #1e293b;
+            --accent-color: #3b82f6;
+            --accent-hover: #2563eb;
+            --text-main: #334155;
+            --text-light: #64748b;
+            --border-color: #e2e8f0;
+            --card-bg: #ffffff;
+        }
+
         * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        body { background-color: #f4f7f6; margin: 0; padding: 10px; color: #333; }
-        .container { max-width: 1400px; margin: 0 auto; background: #ffffff; padding: 15px; border-radius: 10px; box-shadow: 0 4px 15px rgba(0,0,0,0.08); }
-        .top-bar { display: flex; flex-direction: column; gap: 10px; align-items: flex-start; border-bottom: 2px solid #eceff1; padding-bottom: 10px; margin-bottom: 15px; }
-        h2 { font-size: 18px; margin: 0; color: #2c3e50; }
-        .user-info { font-size: 14px; font-weight: bold; color: #2c3e50; }
-        .logout-btn { background-color: #e74c3c; color: white; padding: 6px 12px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; }
+        body { background-color: #f1f5f9; margin: 0; padding: 15px; color: var(--text-main); }
         
-        .nav-tabs { display: flex; gap: 5px; margin-bottom: 15px; }
-        .tab-btn { padding: 8px 12px; background: #e2e8f0; border: none; border-radius: 6px; font-weight: bold; cursor: pointer; color: #475569; font-size: 13px; }
-        .tab-btn.active { background: #3498db; color: white; }
+        .app-wrapper { max-width: 1450px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
+
+        /* Vrhunska tamna navigacijska traka */
+        .top-navbar {
+            background-color: var(--primary-bg);
+            color: white;
+            padding: 15px 25px;
+            border-radius: 12px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+            box-shadow: 0 4px 20px rgba(15, 23, 42, 0.15);
+        }
+
+        .nav-brand {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+
+        .nav-brand h2 { margin: 0; font-size: 20px; letter-spacing: 0.5px; color: #f8fafc; display: flex; align-items: center; gap: 10px; }
+        .nav-brand h2::before { content: ""; display: inline-block; width: 10px; height: 10px; background-color: #3b82f6; border-radius: 50%; }
+
+        .user-panel { display: flex; align-items: center; gap: 15px; font-size: 14px; }
+        .user-badge { background: var(--secondary-bg); padding: 5px 12px; border-radius: 20px; border: 1px solid #334155; color: #cbd5e1; }
+        .logout-btn { background-color: #ef4444; color: white; padding: 6px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; transition: background 0.2s; }
+        .logout-btn:hover { background-color: #dc2626; }
+
+        /* Kartice navigacije */
+        .nav-tabs { display: flex; gap: 8px; border-top: 1px solid #334155; padding-top: 12px; }
+        .tab-btn { padding: 8px 16px; background: transparent; border: 1px solid #334155; border-radius: 6px; font-weight: 600; cursor: pointer; color: #94a3b8; font-size: 13px; transition: all 0.2s; }
+        .tab-btn:hover { background: #334155; color: white; }
+        .tab-btn.active { background: var(--accent-color); color: white; border-color: var(--accent-color); }
 
         .tab-content { display: none; }
         .tab-content.active { display: block; }
 
-        .controls { display: flex; flex-direction: column; gap: 10px; margin-bottom: 15px; }
-        .file-upload-btn { display: block; text-align: center; background-color: #3498db; color: white; padding: 10px 15px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 14px; }
+        /* Glavni kontejner i radni prostor */
+        .main-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 25px;
+            box-shadow: 0 4px 15px rgba(0,0,0,0.05);
+            border: 1px solid var(--border-color);
+        }
+
+        .controls { display: flex; flex-direction: column; gap: 15px; margin-bottom: 20px; }
+        
+        .file-upload-btn { 
+            display: inline-flex; 
+            align-items: center; 
+            justify-content: center; 
+            gap: 8px;
+            background-color: var(--accent-color); 
+            color: white; 
+            padding: 11px 20px; 
+            border-radius: 8px; 
+            cursor: pointer; 
+            font-weight: 600; 
+            font-size: 14px; 
+            box-shadow: 0 2px 5px rgba(59, 130, 246, 0.3);
+            transition: background 0.2s, transform 0.1s; 
+        }
+        .file-upload-btn:hover { background-color: var(--accent-hover); }
+        .file-upload-btn:active { transform: scale(0.98); }
         .file-upload-btn input[type="file"] { display: none; }
-        .search-box { width: 100%; }
-        .search-box input { width: 100%; padding: 10px; font-size: 15px; border: 2px solid #cbd5e1; border-radius: 6px; outline: none; }
+
+        .search-box { width: 100%; position: relative; }
+        .search-box input { 
+            width: 100%; 
+            padding: 12px 15px 12px 42px; 
+            font-size: 15px; 
+            border: 2px solid var(--border-color); 
+            border-radius: 8px; 
+            outline: none; 
+            background: #f8fafc;
+            transition: all 0.2s; 
+        }
+        .search-box input:focus { border-color: var(--accent-color); background: white; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+        .search-box::before {
+            content: "🔍";
+            position: absolute;
+            left: 14px;
+            top: 50%;
+            transform: translateY(-50%);
+            font-size: 14px;
+        }
+
+        .status-info { font-size: 13px; color: var(--text-light); margin-bottom: 15px; font-weight: 500; }
         
-        .status-info { font-size: 13px; color: #64748b; margin-bottom: 10px; }
-        
-        /* Prikaz tablice prilagođen mobitelima i računarima bez suvišnog skrolovanja */
-        .table-container { width: 100%; overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 6px; max-height: 650px; }
+        /* Modernizirana tablica */
+        .table-container { width: 100%; overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; max-height: 600px; }
         table { width: 100%; border-collapse: collapse; background: white; text-align: left; table-layout: auto; }
-        th { background-color: #2c3e50; color: white; padding: 10px; font-size: 13px; white-space: nowrap; position: sticky; top: 0; z-index: 10; }
-        td { padding: 9px 10px; border-bottom: 1px solid #e2e8f0; font-size: 13px; word-break: break-word; }
+        th { 
+            background-color: #1e293b; 
+            color: #f8fafc; 
+            padding: 12px 16px; 
+            font-size: 13px; 
+            font-weight: 600;
+            letter-spacing: 0.3px;
+            white-space: nowrap; 
+            position: sticky; 
+            top: 0; 
+            z-index: 10; 
+        }
+        td { padding: 12px 16px; border-bottom: 1px solid var(--border-color); font-size: 14px; color: #1e293b; word-break: break-word; }
         
         tr:nth-child(even) { background-color: #f8fafc; }
         tr:hover { background-color: #f1f5f9; }
-        mark { background-color: #fef08a; color: #854d0e; padding: 2px 4px; border-radius: 3px; font-weight: bold; }
-        .no-data { text-align: center; padding: 30px; color: #94a3b8; font-style: italic; font-size: 14px; }
+        mark { background-color: #fef08a; color: #854d0e; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
+        .no-data { text-align: center; padding: 40px; color: var(--text-light); font-style: italic; font-size: 14px; }
 
-        .badge-approved { background: #27ae60; color: white; padding: 3px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-        .badge-pending { background: #f39c12; color: white; padding: 3px 6px; border-radius: 4px; font-size: 11px; font-weight: bold; }
-        .btn-approve { background: #27ae60; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; }
-        .btn-block { background: #e74c3c; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; font-weight: bold; font-size: 12px; }
+        .badge-approved { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
+        .badge-pending { background: #fef9c3; color: #854d0e; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
+        .btn-approve { background: #22c55e; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
+        .btn-approve:hover { background: #16a34a; }
+        .btn-block { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
+        .btn-block:hover { background: #dc2626; }
 
-        /* Veći ekran (Desktop) - povratak komfornijeg prikaza */
+        /* Prilagodba za veće ekrane (Desktop) */
         @media (min-width: 768px) {
-            body { padding: 20px; }
-            .container { padding: 25px; }
-            .top-bar { flex-direction: row; justify-content: space-between; align-items: center; }
+            body { padding: 25px; }
+            .top-navbar { flex-direction: row; justify-content: space-between; align-items: center; padding: 20px 30px; }
+            .nav-tabs { border-top: none; padding-top: 0; }
+            .controls { flex-direction: row; align-items: center; justify-content: space-between; }
+            .file-upload-btn { width: auto; }
+            .search-box { width: 350px; }
             h2 { font-size: 22px; }
-            .controls { flex-direction: row; align-items: center; }
-            .file-upload-btn { display: inline-block; width: auto; }
-            .search-box { flex: 1; width: auto; }
-            th, td { padding: 10px 15px; font-size: 14px; }
         }
     </style>
 </head>
 <body>
 
-<div class="container">
-    <div class="top-bar">
-        <h2>Magacin Alata - PK Praezision Technik</h2>
-        <div>
-            <span class="user-info">Korisnik: {{ current_user }}</span> &nbsp;|&nbsp;
+<div class="app-wrapper">
+    <!-- Gornja navigacijska traka -->
+    <div class="top-navbar">
+        <div class="nav-brand">
+            <h2>Magacin Alata — PK Praezision Technik</h2>
+        </div>
+        <div class="user-panel">
+            <span class="user-badge">👤 {{ current_user }}</span>
             <a href="/logout" class="logout-btn">Odjava</a>
+        </div>
+        <div class="nav-tabs">
+            <button class="tab-btn active" onclick="switchTab('searchTab', this)">Pretraga Alata</button>
+            {% if is_admin %}
+            <button class="tab-btn" onclick="switchTab('usersTab', this); loadUsers();">Upravljanje Korisnicima</button>
+            {% endif %}
         </div>
     </div>
 
-    <div class="nav-tabs">
-        <button class="tab-btn active" onclick="switchTab('searchTab', this)">Pretraga Alata</button>
-        {% if is_admin %}
-        <button class="tab-btn" onclick="switchTab('usersTab', this); loadUsers();">Upravljanje Korisnicima</button>
-        {% endif %}
-    </div>
+    <!-- Glavni sadržaj -->
+    <div class="main-card">
+        <!-- TAB 1: PRETRAGA ALATA -->
+        <div id="searchTab" class="tab-content active">
+            <div class="controls">
+                <label class="file-upload-btn">
+                    📁 Učitaj Novi Dokument
+                    <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .pdf">
+                </label>
 
-    <!-- TAB 1: PRETRAGA ALATA -->
-    <div id="searchTab" class="tab-content active">
-        <div class="controls">
-            <label class="file-upload-btn">
-                Učitaj Novi Dokument
-                <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .pdf">
-            </label>
+                <div class="search-box">
+                    <input type="text" id="searchInput" placeholder="Pretraži šifru, naziv, materijal ili ladicu..." disabled>
+                </div>
+            </div>
 
-            <div class="search-box">
-                <input type="text" id="searchInput" placeholder="Pretraži po nazivu, šifri, materijalu ili ladici..." disabled>
+            <div class="status-info" id="statusInfo">Učitavam sačuvane podatke iz baze...</div>
+
+            <div class="table-container">
+                <div id="tableOutput" class="no-data">Učitavam lager...</div>
             </div>
         </div>
 
-        <div class="status-info" id="statusInfo">Učitavam sačuvane podatke iz baze...</div>
-
-        <div class="table-container">
-            <div id="tableOutput" class="no-data">Učitavam lager...</div>
+        <!-- TAB 2: UPRAVLJANJE KORISNICIMA (SAMO ADMIN) -->
+        {% if is_admin %}
+        <div id="usersTab" class="tab-content">
+            <h3 style="margin-top: 0; color: #1e293b;">Popis Registriranih Korisnika</h3>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Korisničko Ime</th>
+                            <th>Status</th>
+                            <th>Uloga</th>
+                            <th>Akcija</th>
+                        </tr>
+                    </thead>
+                    <tbody id="usersTableBody">
+                        <tr><td colspan="4" class="no-data">Učitavam korisnike...</td></tr>
+                    </tbody>
+                </table>
+            </div>
         </div>
+        {% endif %}
     </div>
-
-    <!-- TAB 2: UPRAVLJANJE KORISNICIMA (SAMO ADMIN) -->
-    {% if is_admin %}
-    <div id="usersTab" class="tab-content">
-        <h3>Popis Registriranih Korisnika</h3>
-        <div class="table-container">
-            <table>
-                <thead>
-                    <tr>
-                        <th>Korisničko Ime</th>
-                        <th>Status</th>
-                        <th>Uloga</th>
-                        <th>Akcija</th>
-                    </tr>
-                </thead>
-                <tbody id="usersTableBody">
-                    <tr><td colspan="4" class="no-data">Učitavam korisnike...</td></tr>
-                </tbody>
-            </table>
-        </div>
-    </div>
-    {% endif %}
 </div>
 
 <script>
@@ -152,7 +263,7 @@
                     headers = data.headers && data.headers.length > 0 ? data.headers : ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
                     rawData = data.rows;
                     searchInput.disabled = false;
-                    statusInfo.textContent = `Lager učitan: "${data.filename}" — Ukupno zapisa: ${rawData.length}`;
+                    statusInfo.textContent = `Aktivni lager: "${data.filename}" — Ukupno zapisa: ${rawData.length}`;
                     renderTable(rawData);
                 } else {
                     statusInfo.textContent = "U bazi nema sačuvanog lagera. Učitajte novi Excel ili PDF.";
@@ -178,7 +289,7 @@
         .then(res => res.json())
         .then(res => {
             if (res.success) {
-                statusInfo.textContent = `Lager "${filename}" (${rows.length} zapisa) spremljen u bazu i vidljiv na svim uređajima!`;
+                statusInfo.textContent = `Lager "${filename}" (${rows.length} zapisa) uspješno spremljen i sinkroniziran!`;
             } else {
                 statusInfo.textContent = "Greška pri spremanju u bazu: " + (res.error || "");
             }
@@ -454,3 +565,5 @@
 
 </body>
 </html>
+
+```
