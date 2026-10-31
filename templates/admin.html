@@ -1,16 +1,3 @@
-Evo ga! Pripremio sam potpuno novi, vrhunski i modernizirani dizajn za tvoju aplikaciju koji izgleda točno poput moćnih profesionalnih softvera za upravljanje skladištima (tamna elegantna zaglavlja, mekane sjene, moderni gumbi, jasne oznake i uredna tablica).
-
-Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pretraga sa označavanjem, upravljanje korisnicima i `/ping` održavanje budnim) su u potpunosti očuvane i rade savršeno.
-
-### Kako primijeniti novi dizajn:
-
-1. Otvori svoj repozitorij na **GitHubu**.
-2. Uđi u mapu `templates` i otvori datoteku **`admin.html`**.
-3. Klikni na olovku (**Edit file**).
-4. **Obriši sav stari kod** i zamijeni ga ovim donjim kodom u cijelosti.
-5. Klikni na **Commit changes...** i napravi **Manual Deploy** na Renderu.
-
-```html
 <!DOCTYPE html>
 <html lang="hr">
 <head>
@@ -37,7 +24,6 @@ Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pret
         
         .app-wrapper { max-width: 1450px; margin: 0 auto; display: flex; flex-direction: column; gap: 20px; }
 
-        /* Vrhunska tamna navigacijska traka */
         .top-navbar {
             background-color: var(--primary-bg);
             color: white;
@@ -58,12 +44,11 @@ Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pret
         .nav-brand h2 { margin: 0; font-size: 20px; letter-spacing: 0.5px; color: #f8fafc; display: flex; align-items: center; gap: 10px; }
         .nav-brand h2::before { content: ""; display: inline-block; width: 10px; height: 10px; background-color: #3b82f6; border-radius: 50%; }
 
-        .user-panel { display: flex; align-items: center; gap: 15px; font-size: 14px; }
+        .user-panel { display: flex; align-items: center; gap: 15px; font-size: 14px; flex-wrap: wrap; }
         .user-badge { background: var(--secondary-bg); padding: 5px 12px; border-radius: 20px; border: 1px solid #334155; color: #cbd5e1; }
         .logout-btn { background-color: #ef4444; color: white; padding: 6px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; transition: background 0.2s; }
         .logout-btn:hover { background-color: #dc2626; }
 
-        /* Kartice navigacije */
         .nav-tabs { display: flex; gap: 8px; border-top: 1px solid #334155; padding-top: 12px; }
         .tab-btn { padding: 8px 16px; background: transparent; border: 1px solid #334155; border-radius: 6px; font-weight: 600; cursor: pointer; color: #94a3b8; font-size: 13px; transition: all 0.2s; }
         .tab-btn:hover { background: #334155; color: white; }
@@ -72,7 +57,6 @@ Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pret
         .tab-content { display: none; }
         .tab-content.active { display: block; }
 
-        /* Glavni kontejner i radni prostor */
         .main-card {
             background: var(--card-bg);
             border-radius: 12px;
@@ -99,7 +83,6 @@ Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pret
             transition: background 0.2s, transform 0.1s; 
         }
         .file-upload-btn:hover { background-color: var(--accent-hover); }
-        .file-upload-btn:active { transform: scale(0.98); }
         .file-upload-btn input[type="file"] { display: none; }
 
         .search-box { width: 100%; position: relative; }
@@ -125,7 +108,6 @@ Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pret
 
         .status-info { font-size: 13px; color: var(--text-light); margin-bottom: 15px; font-weight: 500; }
         
-        /* Modernizirana tablica */
         .table-container { width: 100%; overflow-x: auto; border: 1px solid var(--border-color); border-radius: 8px; max-height: 600px; }
         table { width: 100%; border-collapse: collapse; background: white; text-align: left; table-layout: auto; }
         th { 
@@ -134,7 +116,6 @@ Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pret
             padding: 12px 16px; 
             font-size: 13px; 
             font-weight: 600;
-            letter-spacing: 0.3px;
             white-space: nowrap; 
             position: sticky; 
             top: 0; 
@@ -154,14 +135,12 @@ Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pret
         .btn-block { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
         .btn-block:hover { background: #dc2626; }
 
-        /* Prilagodba za veće ekrane (Desktop) */
         @media (min-width: 768px) {
             body { padding: 25px; }
             .top-navbar { flex-direction: row; justify-content: space-between; align-items: center; padding: 20px 30px; }
             .nav-tabs { border-top: none; padding-top: 0; }
             .controls { flex-direction: row; align-items: center; justify-content: space-between; }
-            .file-upload-btn { width: auto; }
-            .search-box { width: 350px; }
+            .search-box { flex: 1; }
             h2 { font-size: 22px; }
         }
     </style>
@@ -191,10 +170,15 @@ Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pret
         <!-- TAB 1: PRETRAGA ALATA -->
         <div id="searchTab" class="tab-content active">
             <div class="controls">
+                <!-- SAMO ADMIN VIDI DUGME ZA UČITAVANJE -->
+                {% if is_admin %}
                 <label class="file-upload-btn">
                     📁 Učitaj Novi Dokument
                     <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .pdf">
                 </label>
+                {% else %}
+                <div></div>
+                {% endif %}
 
                 <div class="search-box">
                     <input type="text" id="searchInput" placeholder="Pretraži šifru, naziv, materijal ili ladicu..." disabled>
@@ -552,7 +536,7 @@ Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pret
         });
     }
 
-    // Lagani pozadinski ping svakih 5 minuta (300.000 ms) - drži Render budnim bez opterećenja baze
+    // Lagani pozadinski ping svakih 5 minuta - drži Render budnim bez opterećenja baze
     setInterval(function() {
         fetch('/ping')
             .then(res => res.json())
@@ -565,5 +549,3 @@ Sve postojeće funkcije (automatsko spremanje u bazu, PDF/Excel parsiranje, pret
 
 </body>
 </html>
-
-```
