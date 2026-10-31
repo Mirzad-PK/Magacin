@@ -20,7 +20,7 @@
 
         * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         
-        /* Čista profesionalna plava pozadina preko cijelog ekrana bez slika */
+        /* Čista profesionalna plava pozadina preko cijelog ekrana */
         body { 
             background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #090d16 100%);
             margin: 0; 
@@ -148,10 +148,17 @@
 
         .badge-approved { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
         .badge-pending { background: #fef9c3; color: #854d0e; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
+        
         .btn-approve { background: #22c55e; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
         .btn-approve:hover { background: #16a34a; }
-        .btn-block { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
-        .btn-block:hover { background: #dc2626; }
+        .btn-block { background: #f59e0b; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
+        .btn-block:hover { background: #d97706; }
+        .btn-delete { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
+        .btn-delete:hover { background: #dc2626; }
+        .btn-reset { background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
+        .btn-reset:hover { background: #2563eb; }
+
+        .action-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
 
         @media (min-width: 768px) {
             body { padding: 15px 25px; }
@@ -189,7 +196,6 @@
         <!-- TAB 1: PRETRAGA ALATA -->
         <div id="searchTab" class="tab-content active">
             <div class="controls">
-                <!-- SAMO ADMIN VIDI DUGME ZA UČITAVANJE -->
                 {% if is_admin %}
                 <label class="file-upload-btn">
                     📁 Učitaj Novi Dokument
@@ -221,7 +227,7 @@
                             <th>Korisničko Ime</th>
                             <th>Status</th>
                             <th>Uloga</th>
-                            <th>Akcija</th>
+                            <th>Akcije (Odobri / Reset Šifre / Obriši)</th>
                         </tr>
                     </thead>
                     <tbody id="usersTableBody">
@@ -452,117 +458,3 @@
     if (searchInput) {
         searchInput.addEventListener('input', function () {
             const query = this.value.trim().toLowerCase();
-
-            if (!query) {
-                renderTable(rawData);
-                statusInfo.textContent = `Ukupno zapisa: ${rawData.length}`;
-                return;
-            }
-
-            const filteredData = rawData.filter(row => {
-                return row.some(cell => {
-                    return cell !== null && cell !== undefined && cell.toString().toLowerCase().includes(query);
-                });
-            });
-
-            statusInfo.textContent = `Pronađeno zapisa: ${filteredData.length} od ukupno ${rawData.length}`;
-            renderTable(filteredData, query);
-        });
-    }
-
-    function renderTable(data, highlightQuery = '') {
-        if (data.length === 0) {
-            tableOutput.innerHTML = '<div class="no-data">Nema rezultata koji odgovaraju pretrazi.</div>';
-            return;
-        }
-
-        let html = '<table><thead><tr>';
-        headers.forEach(header => {
-            html += `<th>${header !== undefined ? header : ''}</th>`;
-        });
-        html += '</tr></thead><tbody>';
-
-        data.forEach(row => {
-            html += '<tr>';
-            for (let i = 0; i < headers.length; i++) {
-                let cellValue = row[i] !== undefined && row[i] !== null ? row[i].toString() : '';
-                
-                if (highlightQuery && cellValue.toLowerCase().includes(highlightQuery)) {
-                    const regex = new RegExp(`(${escapeRegExp(highlightQuery)})`, 'gi');
-                    cellValue = cellValue.replace(regex, '<mark>$1</mark>');
-                }
-
-                html += `<td>${cellValue}</td>`;
-            }
-            html += '</tr>';
-        });
-
-        html += '</tbody></table>';
-        tableOutput.innerHTML = html;
-    }
-
-    function escapeRegExp(string) {
-        return string.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-    }
-
-    function loadUsers() {
-        fetch('/api/users')
-            .then(res => res.json())
-            .then(data => {
-                const tbody = document.getElementById('usersTableBody');
-                if (!tbody) return;
-                tbody.innerHTML = '';
-
-                data.forEach(u => {
-                    let statusBadge = u.approved ? '<span class="badge-approved">Odobren</span>' : '<span class="badge-pending">Na čekanju</span>';
-                    let roleStr = u.is_admin ? 'Administrator' : 'Korisnik';
-                    let actionBtn = '';
-
-                    if (!u.is_admin) {
-                        actionBtn = u.approved 
-                            ? `<button class="btn-block" onclick="toggleUser('${u.username}')">Blokiraj</button>` 
-                            : `<button class="btn-approve" onclick="toggleUser('${u.username}')">Odobri</button>`;
-                    } else {
-                        actionBtn = '<em>Glavni Admin</em>';
-                    }
-
-                    tbody.innerHTML += `
-                        <tr>
-                            <td><strong>${u.username}</strong></td>
-                            <td>${statusBadge}</td>
-                            <td>${roleStr}</td>
-                            <td>${actionBtn}</td>
-                        </tr>
-                    `;
-                });
-            });
-    }
-
-    function toggleUser(username) {
-        fetch('/api/users/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: username })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                loadUsers();
-            } else {
-                alert(data.error || 'Greška pri promjeni statusa!');
-            }
-        });
-    }
-
-    setInterval(function() {
-        fetch('/ping')
-            .then(res => res.json())
-            .then(data => {
-                console.log("Server je budan i aktivan.");
-            })
-            .catch(err => console.log("Ping greška:", err));
-    }, 5 * 60 * 1000);
-</script>
-
-</body>
-</html>
