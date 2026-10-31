@@ -20,10 +20,10 @@
 
         * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
         
-        /* Pozadina sa tvojom tačnom slikom reznih alata preko cijelog ekrana */
+        /* Pozadina s tvojom tačnom slikom reznih alata */
         body { 
             background: linear-gradient(rgba(15, 23, 42, 0.88), rgba(15, 23, 42, 0.88)), 
-                        url('https://images.unsplash.com/photo-1563245372-f21724e3856d?auto=format&fit=crop&w=1920&q=80') no-repeat center center fixed;
+                        url('/static/pozadina.jpg') no-repeat center center fixed;
             background-size: cover;
             margin: 0; 
             padding: 10px; 
@@ -167,7 +167,6 @@
 <body>
 
 <div class="app-wrapper">
-    <!-- Gornja navigacijska traka -->
     <div class="top-navbar">
         <div class="nav-brand">
             <h2>Magacin Alata — PK Praezision Technik</h2>
@@ -184,12 +183,9 @@
         </div>
     </div>
 
-    <!-- Glavni sadržaj preko cijelog ekrana -->
     <div class="main-container">
-        <!-- TAB 1: PRETRAGA ALATA -->
         <div id="searchTab" class="tab-content active">
             <div class="controls">
-                <!-- SAMO ADMIN VIDI DUGME ZA UČITAVANJE -->
                 {% if is_admin %}
                 <label class="file-upload-btn">
                     📁 Učitaj Novi Dokument
@@ -211,7 +207,6 @@
             </div>
         </div>
 
-        <!-- TAB 2: UPRAVLJANJE KORISNICIMA (SAMO ADMIN) -->
         {% if is_admin %}
         <div id="usersTab" class="tab-content">
             <div class="table-container">
