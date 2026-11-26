@@ -1,0 +1,204 @@
+<!-- 1. Dugme kartice u navigaciji/tabovima (stavi pored postojećih dugmadi za tabove) -->
+<button type="button" class="tab-btn" onclick="otvoriKarticu('stok-zaliha', this)">Stok zaliha</button>
+
+<!-- 2. Sadržaj nove kartice "Stok zaliha" -->
+<div id="tab-stok-zaliha" class="tab-content" style="display: none;">
+  <div style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 10px; margin-bottom: 16px;">
+    <div>
+      <h3 style="margin: 0;">Stok zaliha (odabrani alati)</h3>
+      <small>Stavke koje dodaš ovdje ostaju sačuvane i povlače trenutno stanje iz glavnog lagera.</small>
+    </div>
+    <button type="button" onclick="ucitajStokZaliha()">Osvježi stanje iz magacina</button>
+  </div>
+
+  <!-- Forma za dodavanje šifre alata u stok -->
+  <form id="stok-form" onsubmit="dodajUStok(event)" style="display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 16px;">
+    <input
+      type="text"
+      id="stok-sifra"
+      list="lager-sifre-lista"
+      placeholder="Šifra alata (npr. HM-10)"
+      required
+    />
+    <datalist id="lager-sifre-lista"></datalist>
+
+    <input
+      type="text"
+      id="stok-naziv"
+      placeholder="Naziv / opis (opcionalno)"
+    />
+
+    <input
+      type="number"
+      step="any"
+      id="stok-min"
+      placeholder="Min. zaliha (npr. 5)"
+      style="width: 150px;"
+    />
+
+    <button type="submit">Dodaj / Sačuvaj</button>
+  </form>
+
+  <div id="stok-poruka" style="margin-bottom: 12px; font-weight: 500;"></div>
+
+  <!-- Tabela odabranih alata i njihovog stanja sa magacina -->
+  <div style="overflow-x: auto;">
+    <table border="1" cellpadding="8" cellspacing="0" style="width: 100%; border-collapse: collapse;">
+      <thead>
+        <tr>
+          <th>Šifra alata</th>
+          <th>Naziv</th>
+          <th>Stanje u magacinu</th>
+          <th>Min. zaliha</th>
+          <th>Status</th>
+          <th>Akcija</th>
+        </tr>
+      </thead>
+      <tbody id="stok-tabela-body">
+        <tr><td colspan="6">Učitavanje...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+  // Ako već imaš funkciju za prebacivanje kartica, pozovi ucitajStokZaliha() kada se otvori 'stok-zaliha'
+  function otvoriKarticu(nazivKartice, dugmeEl) {
+    document.querySelectorAll('.tab-content').forEach(el => {
+      el.style.display = 'none';
+    });
+    document.querySelectorAll('.tab-btn').forEach(btn => {
+      btn.classList.remove('active');
+    });
+
+    const cilj = document.getElementById('tab-' + nazivKartice);
+    if (cilj) {
+      cilj.style.display = 'block';
+    }
+    if (dugmeEl) {
+      dugmeEl.classList.add('active');
+    }
+
+    if (nazivKartice === 'stok-zaliha') {
+      ucitajStokZaliha();
+    }
+  }
+
+  async function ucitajStokZaliha() {
+    const tbody = document.getElementById('stok-tabela-body');
+    const datalist = document.getElementById('lager-sifre-lista');
+    if (!tbody) return;
+
+    try {
+      const res = await fetch('/api/stok');
+      const data = await res.json();
+
+      if (!res.ok) {
+        tbody.innerHTML = `<tr><td colspan="6">Greška pri učitavanju: ${data.error || res.status}</td></tr>`;
+        return;
+      }
+
+      // Popuni listu šifri iz glavnog lagera kao pomoć pri upisu
+      if (datalist && Array.isArray(data.sifre_iz_lagera)) {
+        datalist.innerHTML = data.sifre_iz_lagera
+          .map(item => `<option value="${escapeHtml(item.sifra)}">${escapeHtml(item.naziv)}</option>`)
+          .join('');
+      }
+
+      const stavke = data.stavke || [];
+      if (stavke.length === 0) {
+        tbody.innerHTML = `<tr><td colspan="6">Još nema dodanih alata u stoku zaliha.</td></tr>`;
+        return;
+      }
+
+      tbody.innerHTML = stavke.map(s => {
+        let statusTekst = s.nadjen_u_lageru ? 'OK' : 'Nije nađen u lageru';
+        let redStil = '';
+
+        if (!s.nadjen_u_lageru) {
+          redStil = 'background-color: #fff8e1;';
+        } else if (s.ispod_minimuma) {
+          statusTekst = 'Ispod minimuma!';
+          redStil = 'background-color: #fdecea;';
+        }
+
+        return `
+          <tr style="${redStil}">
+            <td><strong>${escapeHtml(s.sifra)}</strong></td>
+            <td>${escapeHtml(s.naziv || '-')}</td>
+            <td><strong>${escapeHtml(s.stanje_magacin)}</strong></td>
+            <td>${s.min_zaliha ?? 0}</td>
+            <td>${escapeHtml(statusTekst)}</td>
+            <td>
+              <button type="button" onclick="obrisiIzStoka(${s.id})">Obriši</button>
+            </td>
+          </tr>
+        `;
+      }).join('');
+    } catch (err) {
+      tbody.innerHTML = `<tr><td colspan="6">Greška u mreži pri dohvatu podataka.</td></tr>`;
+    }
+  }
+
+  async function dodajUStok(event) {
+    event.preventDefault();
+    const sifraInput = document.getElementById('stok-sifra');
+    const nazivInput = document.getElementById('stok-naziv');
+    const minInput = document.getElementById('stok-min');
+    const poruka = document.getElementById('stok-poruka');
+
+    const payload = {
+      sifra: sifraInput.value.trim(),
+      naziv: nazivInput.value.trim(),
+      min_zaliha: minInput.value.trim()
+    };
+
+    if (!payload.sifra) return;
+
+    const res = await fetch('/api/stok', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload)
+    });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      sifraInput.value = '';
+      nazivInput.value = '';
+      minInput.value = '';
+      if (poruka) {
+        poruka.style.color = 'green';
+        poruka.textContent = data.updated ? 'Stavka u stoku je ažurirana.' : 'Alat je dodat u stok zaliha.';
+      }
+      ucitajStokZaliha();
+    } else if (poruka) {
+      poruka.style.color = 'red';
+      poruka.textContent = data.error || 'Greška pri spremanju.';
+    }
+  }
+
+  async function obrisiIzStoka(itemId) {
+    const poruka = document.getElementById('stok-poruka');
+    const res = await fetch(`/api/stok/${itemId}`, { method: 'DELETE' });
+    const data = await res.json();
+
+    if (res.ok && data.success) {
+      if (poruka) {
+        poruka.style.color = 'green';
+        poruka.textContent = 'Stavka uklonjena iz stoka zaliha.';
+      }
+      ucitajStokZaliha();
+    } else if (poruka) {
+      poruka.style.color = 'red';
+      poruka.textContent = data.error || 'Greška pri brisanju.';
+    }
+  }
+
+  function escapeHtml(str) {
+    return String(str ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;');
+  }
+</script>
