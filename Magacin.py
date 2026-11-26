@@ -229,7 +229,6 @@ def handle_data():
             return jsonify({'success': False, 'error': 'Samo administrator može mijenjati podatke.'}), 403
 
         req_data = request.json or {}
-        # Ažurira samo glavni lager (LagerData); StokAlata ostaje netaknut
         LagerData.query.delete()
 
         new_lager = LagerData(
@@ -281,12 +280,12 @@ def handle_stok():
                 return jsonify({'success': False, 'error': 'Unesi šifru alata.'}), 400
 
             postojeci = StokAlata.query.filter(db.func.lower(StokAlata.sifra) == sifra.lower()).first()
-            if postojeći:
+            if postojeci:
                 if naziv:
-                    postojeći.naziv = naziv[:250]
-                postojeći.min_zaliha = min_zaliha
+                    postojeci.naziv = naziv[:250]
+                postojeci.min_zaliha = min_zaliha
                 db.session.commit()
-                return jsonify({'success': True, 'updated': True, 'id': postojeći.id})
+                return jsonify({'success': True, 'updated': True, 'id': postojeci.id})
 
             info_lager = pronadji_stanje_u_lageru(sifra)
             naziv_lager = info_lager.get('naziv') or ''
@@ -301,7 +300,6 @@ def handle_stok():
             db.session.rollback()
             return jsonify({'success': False, 'error': f'Greška na serveru: {str(e)}'}), 500
 
-    # GET: vrati sve alate iz stoka sa sabranim stanjem iz magacina (0 ako ga nema u lageru)
     try:
         db.create_all()
         stavke = StokAlata.query.order_by(StokAlata.id.asc()).all()
