@@ -303,7 +303,7 @@
                 <div class="stok-header">
                     <div>
                         <h3>Stok zaliha — odabrani alati</h3>
-                        <small>Šifre koje dodaš ovdje ostaju sačuvane i automatski povlače stanje iz glavnog lagera.</small>
+                        <small>Šifre koje dodaš ovdje ostaju sačuvane i povlače stanje iz glavnog lagera (0 ako ga nema na lageru).</small>
                     </div>
                     <button type="button" class="btn-secondary-sm" onclick="loadStokZaliha()">↻ Osvježi stanje</button>
                 </div>
@@ -338,6 +338,23 @@
                     <button type="submit" class="btn-primary-sm">+ Dodaj / Sačuvaj</button>
                 </form>
                 {% endif %}
+
+                <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;">
+                    <div class="search-box" style="flex: 1; min-width: 220px;">
+                        <input
+                            type="text"
+                            id="stokSearchInput"
+                            placeholder="Filtriraj po šifri, nazivu, ladici ili stanju..."
+                            oninput="renderStokTable()"
+                        >
+                    </div>
+
+                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
+                        <button type="button" class="tab-btn active" id="stokFilterAll" onclick="setStokFilter('all', this)">Sve</button>
+                        <button type="button" class="tab-btn" id="stokFilterLow" onclick="setStokFilter('low', this)">Ispod minimuma</button>
+                        <button type="button" class="tab-btn" id="stokFilterMissing" onclick="setStokFilter('missing', this)">Stanje 0</button>
+                    </div>
+                </div>
 
                 <div class="status-info" id="stokStatusInfo">Učitavam stok zaliha...</div>
             </div>
@@ -388,6 +405,8 @@
 
 <script>
     const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+    let stokItems = [];
+    let currentStokFilter = 'all';
 
     function switchTab(tabId, btn) {
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
@@ -670,6 +689,16 @@
             .replace(/"/g, '&quot;');
     }
 
+    function setStokFilter(filterName, btnEl) {
+        currentStokFilter = filterName;
+        ['stokFilterAll', 'stokFilterLow', 'stokFilterMissing'].forEach(id => {
+            const b = document.getElementById(id);
+            if (b) b.classList.remove('active');
+        });
+        if (btnEl) btnEl.classList.add('active');
+        renderStokTable();
+    }
+
     function loadStokZaliha() {
         const tbody = document.getElementById('stokTableBody');
         const datalist = document.getElementById('lagerSifreList');
@@ -682,61 +711,104 @@
         }
 
         fetch('/api/stok')
-            .then(res => res.json())
-            .then(data => {
-                if (!data || data.error) {
-                    tbody.innerHTML = `<tr><td colspan="${kolonaBroj}" class="no-data">Greška pri učitavanju stoka zaliha.</td></tr>`;
-                    return;
+            .then(async res => {
+                const text = await res.text();
+                let data = {};
+                try {
+                    data = JSON.parse(text);
+                } catch (_) {
+                    throw new Error(`HTTP ${res.status}`);
                 }
-
+                if (!res.ok || data.error) {
+                    throw new Error(data.error || `HTTP ${res.status}`);
+                }
+                return data;
+            })
+            .then(data => {
                 if (datalist && Array.isArray(data.sifre_iz_lagera)) {
                     datalist.innerHTML = data.sifre_iz_lagera
                         .map(item => `<option value="${escapeHtml(item.sifra)}">${escapeHtml(item.naziv)}</option>`)
                         .join('');
                 }
 
-                const stavke = data.stavke || [];
-                if (stokStatus) {
-                    stokStatus.textContent = `Praćenih alata u stoku: ${stavke.length}`;
-                }
-
-                if (stavke.length === 0) {
-                    tbody.innerHTML = `<tr><td colspan="${kolonaBroj}" class="no-data">Još nema dodanih alata u stoku zaliha.</td></tr>`;
-                    return;
-                }
-
-                tbody.innerHTML = stavke.map(s => {
-                    let badgeHtml = '<span class="badge-approved">OK</span>';
-                    let rowBg = '';
-
-                    if (!s.nadjen_u_lageru) {
-                        badgeHtml = '<span class="badge-warn">Nije u lageru</span>';
-                        rowBg = 'background-color: #fffbeb;';
-                    } else if (s.ispod_minimuma) {
-                        badgeHtml = '<span class="badge-low">Ispod minimuma</span>';
-                        rowBg = 'background-color: #fef2f2;';
-                    }
-
-                    const akcijeCell = IS_ADMIN
-                        ? `<td><button type="button" class="btn-delete" onclick="deleteStokItem(${s.id})">Obriši</button></td>`
-                        : '';
-
-                    return `
-                        <tr style="${rowBg}">
-                            <td><strong>${escapeHtml(s.sifra)}</strong></td>
-                            <td>${escapeHtml(s.naziv || '-')}</td>
-                            <td>${escapeHtml(s.ladica || '-')}</td>
-                            <td><strong>${escapeHtml(s.stanje_magacin)}</strong></td>
-                            <td>${escapeHtml(s.min_zaliha ?? 0)}</td>
-                            <td>${badgeHtml}</td>
-                            ${akcijeCell}
-                        </tr>
-                    `;
-                }).join('');
+                stokItems = data.stavke || [];
+                renderStokTable();
             })
             .catch(err => {
-                tbody.innerHTML = `<tr><td colspan="${kolonaBroj}" class="no-data">Greška u mreži pri učitavanju stoka zaliha.</td></tr>`;
+                if (stokStatus) {
+                    stokStatus.textContent = "Greška pri učitavanju stoka zaliha: " + err.message;
+                }
+                tbody.innerHTML = `<tr><td colspan="${kolonaBroj}" class="no-data">Greška pri učitavanju stoka zaliha.</td></tr>`;
             });
+    }
+
+    function renderStokTable() {
+        const tbody = document.getElementById('stokTableBody');
+        const stokStatus = document.getElementById('stokStatusInfo');
+        const searchEl = document.getElementById('stokSearchInput');
+        const kolonaBroj = IS_ADMIN ? 7 : 6;
+        if (!tbody) return;
+
+        const query = (searchEl ? searchEl.value : '').trim().toLowerCase();
+
+        const filtered = stokItems.filter(s => {
+            const stanjeNula = !s.nadjen_u_lageru || Number(s.stanje_magacin) === 0;
+            if (currentStokFilter === 'low' && !s.ispod_minimuma) return false;
+            if (currentStokFilter === 'missing' && !stanjeNula) return false;
+
+            if (!query) return true;
+            const hay = [
+                s.sifra,
+                s.naziv,
+                s.ladica,
+                s.stanje_magacin
+            ].map(v => String(v ?? '').toLowerCase()).join(' ');
+
+            return hay.includes(query);
+        });
+
+        if (stokStatus) {
+            stokStatus.textContent = `Prikazano stavki: ${filtered.length} od ukupno ${stokItems.length}`;
+        }
+
+        if (filtered.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="${kolonaBroj}" class="no-data">Nema stavki koje odgovaraju filteru ili pretrazi.</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = filtered.map(s => {
+            const stanjeVal = s.stanje_magacin ?? 0;
+            let badgeHtml = '<span class="badge-approved">OK</span>';
+            let rowBg = '';
+
+            if (s.ispod_minimuma) {
+                badgeHtml = '<span class="badge-low">Ispod minimuma</span>';
+                rowBg = 'background-color: #fef2f2;';
+            } else if (!s.nadjen_u_lageru || Number(stanjeVal) === 0) {
+                badgeHtml = '<span class="badge-warn">Stanje 0</span>';
+                rowBg = 'background-color: #fffbeb;';
+            }
+
+            const minCell = IS_ADMIN
+                ? `<td style="cursor: pointer;" title="Klikni za brzu izmjenu minimalne zalihe" onclick="editStokMin(${s.id})"><strong>${escapeHtml(s.min_zaliha ?? 0)}</strong> ✏️</td>`
+                : `<td>${escapeHtml(s.min_zaliha ?? 0)}</td>`;
+
+            const akcijeCell = IS_ADMIN
+                ? `<td><div class="action-buttons"><button type="button" class="btn-reset" onclick="editStokMin(${s.id})">Min. zaliha</button><button type="button" class="btn-delete" onclick="deleteStokItem(${s.id})">Obriši</button></div></td>`
+                : '';
+
+            return `
+                <tr style="${rowBg}">
+                    <td><strong>${escapeHtml(s.sifra)}</strong></td>
+                    <td>${escapeHtml(s.naziv || '-')}</td>
+                    <td>${escapeHtml(s.ladica || '-')}</td>
+                    <td><strong>${escapeHtml(stanjeVal)}</strong></td>
+                    ${minCell}
+                    <td>${badgeHtml}</td>
+                    ${akcijeCell}
+                </tr>
+            `;
+        }).join('');
     }
 
     function addStokItem(event) {
@@ -759,24 +831,87 @@
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(payload)
         })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                sifraInput.value = '';
-                nazivInput.value = '';
-                minInput.value = '';
-                if (stokStatus) {
-                    stokStatus.textContent = data.updated
-                        ? "Stavka u stoku zaliha je ažurirana."
-                        : "Alat je dodat u stok zaliha.";
-                }
-                loadStokZaliha();
-            } else {
-                alert(data.error || 'Greška pri dodavanju u stok zaliha.');
+        .then(async res => {
+            const text = await res.text();
+            let data = {};
+            try {
+                data = JSON.parse(text);
+            } catch (_) {
+                throw new Error(`HTTP ${res.status}`);
             }
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            return data;
+        })
+        .then(data => {
+            sifraInput.value = '';
+            nazivInput.value = '';
+            minInput.value = '';
+            if (stokStatus) {
+                stokStatus.textContent = data.updated
+                    ? "Stavka u stoku zaliha je ažurirana."
+                    : "Alat je dodat u stok zaliha.";
+            }
+            loadStokZaliha();
         })
         .catch(err => {
-            alert('Mrežna greška pri spremanju u stok zaliha.');
+            alert('Greška pri spremanju u stok zaliha: ' + err.message);
+        });
+    }
+
+    function editStokMin(itemId) {
+        const item = stokItems.find(s => s.id === itemId);
+        if (!item) return;
+
+        const novaMin = prompt(
+            `Nova minimalna zaliha za alat "${item.sifra}" (${item.naziv || 'bez naziva'}):`,
+            item.min_zaliha ?? 0
+        );
+
+        if (novaMin === null) return;
+
+        const trimmed = novaMin.trim().replace(',', '.');
+        if (trimmed === '' || isNaN(Number(trimmed))) {
+            alert('Unesi ispravan broj za minimalnu zalihu.');
+            return;
+        }
+
+        const stokStatus = document.getElementById('stokStatusInfo');
+        if (stokStatus) {
+            stokStatus.textContent = `Ažuriram minimalnu zalihu za ${item.sifra}...`;
+        }
+
+        fetch('/api/stok', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                sifra: item.sifra,
+                naziv: item.naziv || '',
+                min_zaliha: Number(trimmed)
+            })
+        })
+        .then(async res => {
+            const text = await res.text();
+            let data = {};
+            try {
+                data = JSON.parse(text);
+            } catch (_) {
+                throw new Error(`HTTP ${res.status}`);
+            }
+            if (!res.ok || !data.success) {
+                throw new Error(data.error || `HTTP ${res.status}`);
+            }
+            return data;
+        })
+        .then(() => {
+            if (stokStatus) {
+                stokStatus.textContent = `Minimalna zaliha za ${item.sifra} postavljena na ${Number(trimmed)}.`;
+            }
+            loadStokZaliha();
+        })
+        .catch(err => {
+            alert('Greška pri ažuriranju minimalne zalihe: ' + err.message);
         });
     }
 
@@ -784,16 +919,24 @@
         if (!confirm('Ukloniti ovaj alat iz stoka zaliha?')) return;
 
         fetch(`/api/stok/${itemId}`, { method: 'DELETE' })
-            .then(res => res.json())
-            .then(data => {
-                if (data.success) {
-                    loadStokZaliha();
-                } else {
-                    alert(data.error || 'Greška pri brisanju stavke.');
+            .then(async res => {
+                const text = await res.text();
+                let data = {};
+                try {
+                    data = JSON.parse(text);
+                } catch (_) {
+                    throw new Error(`HTTP ${res.status}`);
                 }
+                if (!res.ok || !data.success) {
+                    throw new Error(data.error || `HTTP ${res.status}`);
+                }
+                return data;
+            })
+            .then(() => {
+                loadStokZaliha();
             })
             .catch(err => {
-                alert('Mrežna greška pri brisanju stavke.');
+                alert('Greška pri brisanju stavke: ' + err.message);
             });
     }
 
