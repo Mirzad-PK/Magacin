@@ -63,7 +63,7 @@
         .logout-btn { background-color: #ef4444; color: white; padding: 6px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; transition: background 0.2s; }
         .logout-btn:hover { background-color: #dc2626; }
 
-        .nav-tabs { display: flex; gap: 8px; border-top: 1px solid #334155; padding-top: 12px; }
+        .nav-tabs { display: flex; gap: 8px; border-top: 1px solid #334155; padding-top: 12px; flex-wrap: wrap; }
         .tab-btn { padding: 8px 16px; background: transparent; border: 1px solid #334155; border-radius: 6px; font-weight: 600; cursor: pointer; color: #94a3b8; font-size: 13px; transition: all 0.2s; }
         .tab-btn:hover { background: #334155; color: white; }
         .tab-btn.active { background: var(--accent-color); color: white; border-color: var(--accent-color); }
@@ -123,6 +123,88 @@
             font-size: 14px;
         }
 
+        .stok-toolbar {
+            background-color: var(--secondary-bg);
+            border: 1px solid var(--border-color);
+            border-radius: 10px;
+            padding: 16px;
+            margin-bottom: 14px;
+            display: flex;
+            flex-direction: column;
+            gap: 12px;
+        }
+
+        .stok-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            flex-wrap: wrap;
+            gap: 10px;
+        }
+
+        .stok-header h3 {
+            margin: 0;
+            font-size: 16px;
+            color: #f8fafc;
+        }
+
+        .stok-header small {
+            color: #94a3b8;
+        }
+
+        .stok-form {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 10px;
+            align-items: center;
+        }
+
+        .stok-form input {
+            padding: 10px 12px;
+            border-radius: 6px;
+            border: 1px solid #475569;
+            background: #0f172a;
+            color: #f8fafc;
+            font-size: 14px;
+            outline: none;
+        }
+
+        .stok-form input:focus {
+            border-color: var(--accent-color);
+        }
+
+        .btn-primary-sm {
+            background-color: var(--accent-color);
+            color: white;
+            border: none;
+            padding: 10px 16px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-primary-sm:hover {
+            background-color: var(--accent-hover);
+        }
+
+        .btn-secondary-sm {
+            background-color: #334155;
+            color: #f8fafc;
+            border: 1px solid #475569;
+            padding: 8px 14px;
+            border-radius: 6px;
+            font-weight: 600;
+            font-size: 13px;
+            cursor: pointer;
+            transition: background 0.2s;
+        }
+
+        .btn-secondary-sm:hover {
+            background-color: #475569;
+        }
+
         .status-info { font-size: 13px; color: #94a3b8; font-weight: 500; }
         
         .table-container { width: 100%; overflow-x: auto; border: 1px solid #334155; border-radius: 10px; max-height: 78vh; background: #ffffff; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
@@ -147,6 +229,8 @@
 
         .badge-approved { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
         .badge-pending { background: #fef9c3; color: #854d0e; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
+        .badge-warn { background: #fef3c7; color: #92400e; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
+        .badge-low { background: #fee2e2; color: #991b1b; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
         
         .btn-approve { background: #22c55e; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
         .btn-approve:hover { background: #16a34a; }
@@ -183,6 +267,7 @@
         </div>
         <div class="nav-tabs">
             <button class="tab-btn active" onclick="switchTab('searchTab', this)">Pretraga Alata</button>
+            <button class="tab-btn" onclick="switchTab('stokTab', this); loadStokZaliha();">Stok zaliha</button>
             {% if is_admin %}
             <button class="tab-btn" onclick="switchTab('usersTab', this); loadUsers();">Upravljanje Korisnicima</button>
             {% endif %}
@@ -213,6 +298,72 @@
             </div>
         </div>
 
+        <div id="stokTab" class="tab-content">
+            <div class="stok-toolbar">
+                <div class="stok-header">
+                    <div>
+                        <h3>Stok zaliha — odabrani alati</h3>
+                        <small>Šifre koje dodaš ovdje ostaju sačuvane i automatski povlače stanje iz glavnog lagera.</small>
+                    </div>
+                    <button type="button" class="btn-secondary-sm" onclick="loadStokZaliha()">↻ Osvježi stanje</button>
+                </div>
+
+                {% if is_admin %}
+                <form class="stok-form" onsubmit="addStokItem(event)">
+                    <input
+                        type="text"
+                        id="stokSifra"
+                        list="lagerSifreList"
+                        placeholder="Šifra alata ili materijala"
+                        required
+                        style="min-width: 210px;"
+                    >
+                    <datalist id="lagerSifreList"></datalist>
+
+                    <input
+                        type="text"
+                        id="stokNaziv"
+                        placeholder="Naziv / opis (opcionalno)"
+                        style="min-width: 220px;"
+                    >
+
+                    <input
+                        type="number"
+                        step="any"
+                        id="stokMin"
+                        placeholder="Min. zaliha"
+                        style="width: 140px;"
+                    >
+
+                    <button type="submit" class="btn-primary-sm">+ Dodaj / Sačuvaj</button>
+                </form>
+                {% endif %}
+
+                <div class="status-info" id="stokStatusInfo">Učitavam stok zaliha...</div>
+            </div>
+
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Šifra alata</th>
+                            <th>Naziv alata</th>
+                            <th>Ladica</th>
+                            <th>Stanje u magacinu</th>
+                            <th>Min. zaliha</th>
+                            <th>Status</th>
+                            {% if is_admin %}
+                            <th>Akcije</th>
+                            {% endif %}
+                        </tr>
+                    </thead>
+                    <tbody id="stokTableBody">
+                        <tr><td colspan="{{ 7 if is_admin else 6 }}" class="no-data">Učitavam stok zaliha...</td></tr>
+                    </tbody>
+                </table>
+            </div>
+        </div>
+
         {% if is_admin %}
         <div id="usersTab" class="tab-content">
             <div class="table-container">
@@ -236,6 +387,8 @@
 </div>
 
 <script>
+    const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
+
     function switchTab(tabId, btn) {
         document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
         document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
@@ -293,6 +446,9 @@
         .then(res => {
             if (res.success) {
                 statusInfo.textContent = `Lager "${filename}" (${rows.length} zapisa) uspješno spremljen i sinkroniziran!`;
+                if (document.getElementById('stokTab').classList.contains('active')) {
+                    loadStokZaliha();
+                }
             } else {
                 statusInfo.textContent = "Greška pri spremanju u bazu: " + (res.error || "");
             }
@@ -504,6 +660,141 @@
 
     function escapeRegExp(string) {
         return string.replace(/[.*+?^${}()|[\]\tabs]/g, '\\$&');
+    }
+
+    function escapeHtml(str) {
+        return String(str ?? '')
+            .replace(/&/g, '&amp;')
+            .replace(/</g, '&lt;')
+            .replace(/>/g, '&gt;')
+            .replace(/"/g, '&quot;');
+    }
+
+    function loadStokZaliha() {
+        const tbody = document.getElementById('stokTableBody');
+        const datalist = document.getElementById('lagerSifreList');
+        const stokStatus = document.getElementById('stokStatusInfo');
+        const kolonaBroj = IS_ADMIN ? 7 : 6;
+        if (!tbody) return;
+
+        if (stokStatus) {
+            stokStatus.textContent = "Učitavam stok zaliha i stanje iz glavnog lagera...";
+        }
+
+        fetch('/api/stok')
+            .then(res => res.json())
+            .then(data => {
+                if (!data || data.error) {
+                    tbody.innerHTML = `<tr><td colspan="${kolonaBroj}" class="no-data">Greška pri učitavanju stoka zaliha.</td></tr>`;
+                    return;
+                }
+
+                if (datalist && Array.isArray(data.sifre_iz_lagera)) {
+                    datalist.innerHTML = data.sifre_iz_lagera
+                        .map(item => `<option value="${escapeHtml(item.sifra)}">${escapeHtml(item.naziv)}</option>`)
+                        .join('');
+                }
+
+                const stavke = data.stavke || [];
+                if (stokStatus) {
+                    stokStatus.textContent = `Praćenih alata u stoku: ${stavke.length}`;
+                }
+
+                if (stavke.length === 0) {
+                    tbody.innerHTML = `<tr><td colspan="${kolonaBroj}" class="no-data">Još nema dodanih alata u stoku zaliha.</td></tr>`;
+                    return;
+                }
+
+                tbody.innerHTML = stavke.map(s => {
+                    let badgeHtml = '<span class="badge-approved">OK</span>';
+                    let rowBg = '';
+
+                    if (!s.nadjen_u_lageru) {
+                        badgeHtml = '<span class="badge-warn">Nije u lageru</span>';
+                        rowBg = 'background-color: #fffbeb;';
+                    } else if (s.ispod_minimuma) {
+                        badgeHtml = '<span class="badge-low">Ispod minimuma</span>';
+                        rowBg = 'background-color: #fef2f2;';
+                    }
+
+                    const akcijeCell = IS_ADMIN
+                        ? `<td><button type="button" class="btn-delete" onclick="deleteStokItem(${s.id})">Obriši</button></td>`
+                        : '';
+
+                    return `
+                        <tr style="${rowBg}">
+                            <td><strong>${escapeHtml(s.sifra)}</strong></td>
+                            <td>${escapeHtml(s.naziv || '-')}</td>
+                            <td>${escapeHtml(s.ladica || '-')}</td>
+                            <td><strong>${escapeHtml(s.stanje_magacin)}</strong></td>
+                            <td>${escapeHtml(s.min_zaliha ?? 0)}</td>
+                            <td>${badgeHtml}</td>
+                            ${akcijeCell}
+                        </tr>
+                    `;
+                }).join('');
+            })
+            .catch(err => {
+                tbody.innerHTML = `<tr><td colspan="${kolonaBroj}" class="no-data">Greška u mreži pri učitavanju stoka zaliha.</td></tr>`;
+            });
+    }
+
+    function addStokItem(event) {
+        event.preventDefault();
+        const sifraInput = document.getElementById('stokSifra');
+        const nazivInput = document.getElementById('stokNaziv');
+        const minInput = document.getElementById('stokMin');
+        const stokStatus = document.getElementById('stokStatusInfo');
+
+        const payload = {
+            sifra: sifraInput.value.trim(),
+            naziv: nazivInput.value.trim(),
+            min_zaliha: minInput.value.trim()
+        };
+
+        if (!payload.sifra) return;
+
+        fetch('/api/stok', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        })
+        .then(res => res.json())
+        .then(data => {
+            if (data.success) {
+                sifraInput.value = '';
+                nazivInput.value = '';
+                minInput.value = '';
+                if (stokStatus) {
+                    stokStatus.textContent = data.updated
+                        ? "Stavka u stoku zaliha je ažurirana."
+                        : "Alat je dodat u stok zaliha.";
+                }
+                loadStokZaliha();
+            } else {
+                alert(data.error || 'Greška pri dodavanju u stok zaliha.');
+            }
+        })
+        .catch(err => {
+            alert('Mrežna greška pri spremanju u stok zaliha.');
+        });
+    }
+
+    function deleteStokItem(itemId) {
+        if (!confirm('Ukloniti ovaj alat iz stoka zaliha?')) return;
+
+        fetch(`/api/stok/${itemId}`, { method: 'DELETE' })
+            .then(res => res.json())
+            .then(data => {
+                if (data.success) {
+                    loadStokZaliha();
+                } else {
+                    alert(data.error || 'Greška pri brisanju stavke.');
+                }
+            })
+            .catch(err => {
+                alert('Mrežna greška pri brisanju stavke.');
+            });
     }
 
     function loadUsers() {
