@@ -6,6 +6,7 @@ from werkzeug.security import generate_password_hash, check_password_hash
 app = Flask(__name__)
 app.secret_key = os.environ.get('SECRET_KEY', 'tajni_kljuc_magacin')
 
+# Povezivanje na PostgreSQL bazu preko Render DATABASE_URL-a
 database_url = os.environ.get('DATABASE_URL')
 if database_url and database_url.startswith("postgres://"):
     database_url = database_url.replace("postgres://", "postgresql://", 1)
@@ -16,6 +17,7 @@ app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
 db = SQLAlchemy(app)
 
 
+# Model baze za korisnike
 class User(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     username = db.Column(db.String(80), unique=True, nullable=False)
@@ -24,6 +26,7 @@ class User(db.Model):
     is_admin = db.Column(db.Boolean, default=False)
 
 
+# Model baze za spremanje stanja lagera (Excel/PDF podaci)
 class LagerData(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     filename = db.Column(db.String(200))
@@ -31,6 +34,7 @@ class LagerData(db.Model):
     rows = db.Column(db.JSON)
 
 
+# Posebna tabela za alate u "Stok zaliha" (ostaje sačuvana pri ažuriranju lagera)
 class StokAlata(db.Model):
     id = db.Column(db.Integer, primary_key=True)
     sifra = db.Column(db.String(120), unique=True, nullable=False)
@@ -40,6 +44,7 @@ class StokAlata(db.Model):
 
 with app.app_context():
     db.create_all()
+    # Automatski kreiraj admina ako ne postoji
     admin_user = User.query.filter_by(username='mirzad').first()
     if not admin_user:
         hashed_pw = generate_password_hash('admin123')
@@ -64,6 +69,7 @@ def _parse_broj(val):
 
 
 def pronadji_stanje_u_lageru(sifra):
+    """Sabira količine i spaja nazive ladica za istu šifru u svim redovima glavnog lagera."""
     lager = LagerData.query.order_by(LagerData.id.desc()).first()
     if not lager or not lager.rows:
         return {
@@ -120,18 +126,19 @@ def pronadji_stanje_u_lageru(sifra):
         if tekstualna_stanja:
             stanje_prikaz = f"{stanje_prikaz} ({', '.join(tekstualna_stanja)})"
     else:
-        stanje_prikaz = ', '.join(tekstualna_stanja) if tekstualna_stanja else '-'
+        stanje_prikaz = ', '.join(tekstualna_stanja) if tekstualna_stanja else 0
 
     return {
         'nadjen': True,
         'stanje': stanje_prikaz,
-        'stanje_broj': ukupno_broj if imao_broj else None,
+        'stanje_broj': ukupno_broj if imao_broj else 0.0,
         'naziv': naziv_nadjen,
         'ladica': ', '.join(ladice) if ladice else '-'
     }
 
 
 def lista_sifri_iz_lagera():
+    """Vraća listu dostupnih šifri i naziva iz glavnog lagera za brzi odabir."""
     lager = LagerData.query.order_by(LagerData.id.desc()).first()
     if not lager or not lager.rows:
         return []
@@ -212,6 +219,7 @@ def logout():
     return redirect(url_for('login'))
 
 
+# API za dohvat i spremanje podataka lagera
 @app.route('/api/data', methods=['GET', 'POST'])
 def handle_data():
     if 'user' not in session:
@@ -222,6 +230,7 @@ def handle_data():
             return jsonify({'success': False, 'error': 'Samo administrator može mijenjati podatke.'}), 403
 
         req_data = request.json or {}
+        # Ažurira samo glavni lager (LagerData); StokAlata ostaje netaknut
         LagerData.query.delete()
 
         new_lager = LagerData(
@@ -244,6 +253,7 @@ def handle_data():
         return jsonify({'rows': []})
 
 
+# API za upravljanje "Stok zaliha" (odabrani alati + stanje povučeno iz magacina)
 @app.route('/api/stok', methods=['GET', 'POST'])
 def handle_stok():
     if 'user' not in session:
@@ -282,22 +292,25 @@ def handle_stok():
         db.session.commit()
         return jsonify({'success': True, 'created': True, 'id': novi.id})
 
+    # GET: vrati sve alate iz stoka sa sabranim stanjem iz magacina (0 ako ga nema u lageru)
     stavke = StokAlata.query.order_by(StokAlata.id.asc()).all()
     rezultat = []
     for s in stavke:
         info = pronadji_stanje_u_lageru(s.sifra)
-        stanje_num = info['stanje_broj']
+        stanje_num = info['stanje_broj'] if info['nadjen'] and info['stanje_broj'] is not None else 0.0
+        stanje_prikaz = info['stanje'] if info['nadjen'] and info['stanje'] is not None else 0
+
         ispod_minimuma = False
-        if stanje_num is not None and s.min_zaliha is not None and s.min_zaliha > 0:
+        if s.min_zaliha is not None and s.min_zaliha > 0:
             ispod_minimuma = stanje_num <= s.min_zaliha
 
         rezultat.append({
             'id': s.id,
             'sifra': s.sifra,
             'naziv': s.naziv or (info['naziv'] or ''),
-            'ladica': info['ladica'] or '-',
+            'ladica': info['ladica'] if (info['nadjen'] and info['ladica']) else '-',
             'min_zaliha': s.min_zaliha,
-            'stanje_magacin': info['stanje'] if info['nadjen'] else 'Nema u lageru',
+            'stanje_magacin': stanje_prikaz,
             'nadjen_u_lageru': info['nadjen'],
             'ispod_minimuma': ispod_minimuma
         })
@@ -322,6 +335,7 @@ def delete_stok_item(item_id):
     return jsonify({'success': True})
 
 
+# API za upravljanje korisnicima (samo admin)
 @app.route('/api/users', methods=['GET'])
 def get_users():
     if 'user' not in session or not session.get('is_admin'):
@@ -397,6 +411,7 @@ def reset_password():
     return jsonify({'success': False, 'error': 'Korisnik nije pronađen.'}), 404
 
 
+# Ruta za sprečavanje uspavljivanja poslužitelja na Renderu
 @app.route('/ping')
 def ping():
     return jsonify({'status': 'active'}), 200
