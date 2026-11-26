@@ -1,1045 +1,439 @@
-<!DOCTYPE html>
-<html lang="hr">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Magacin Alata - PK Praezision Technik</title>
-    <script src="https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js"></script>
-    <style>
-        :root {
-            --primary-bg: #0f172a;
-            --secondary-bg: #1e293b;
-            --accent-color: #3b82f6;
-            --accent-hover: #2563eb;
-            --text-main: #334155;
-            --text-light: #94a3b8;
-            --border-color: #334155;
+import os
+from flask import Flask, render_template, request, redirect, url_for, session, jsonify
+from flask_sqlalchemy import SQLAlchemy
+from werkzeug.security import generate_password_hash, check_password_hash
+
+app = Flask(__name__)
+app.secret_key = os.environ.get('SECRET_KEY', 'tajni_kljuc_magacin')
+
+# Povezivanje na PostgreSQL bazu preko Render DATABASE_URL-a
+database_url = os.environ.get('DATABASE_URL')
+if database_url and database_url.startswith("postgres://"):
+    database_url = database_url.replace("postgres://", "postgresql://", 1)
+
+app.config['SQLALCHEMY_DATABASE_URI'] = database_url or 'sqlite:///magacin.db'
+app.config['SQLALCHEMY_TRACK_MODIFICATIONS'] = False
+
+db = SQLAlchemy(app)
+
+
+# Model baze za korisnike
+class User(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    username = db.Column(db.String(80), unique=True, nullable=False)
+    password_hash = db.Column(db.String(200), nullable=False)
+    approved = db.Column(db.Boolean, default=False)
+    is_admin = db.Column(db.Boolean, default=False)
+
+
+# Model baze za spremanje stanja lagera (Excel/PDF podaci)
+class LagerData(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    filename = db.Column(db.String(200))
+    headers = db.Column(db.JSON)
+    rows = db.Column(db.JSON)
+
+
+# Posebna tabela za alate u "Stok zaliha" (ostaje sačuvana pri ažuriranju lagera)
+class StokAlata(db.Model):
+    id = db.Column(db.Integer, primary_key=True)
+    sifra = db.Column(db.String(120), unique=True, nullable=False)
+    naziv = db.Column(db.String(250), nullable=True)
+    min_zaliha = db.Column(db.Float, default=0.0)
+
+
+with app.app_context():
+    db.create_all()
+    admin_user = User.query.filter_by(username='mirzad').first()
+    if not admin_user:
+        hashed_pw = generate_password_hash('admin123')
+        admin = User(username='mirzad', password_hash=hashed_pw, approved=True, is_admin=True)
+        db.session.add(admin)
+        db.session.commit()
+
+
+def _parse_broj(val):
+    if val is None:
+        return None
+    if isinstance(val, (int, float)):
+        return float(val)
+    s = str(val).strip().replace(',', '.')
+    cleaned = ''.join(ch for ch in s if ch.isdigit() or ch in '.-')
+    if not cleaned or cleaned in ('.', '-', '-.'):
+        return None
+    try:
+        return float(cleaned)
+    except ValueError:
+        return None
+
+
+def pronadji_stanje_u_lageru(sifra):
+    """Sabira količine i spaja nazive ladica za istu šifru u svim redovima glavnog lagera."""
+    lager = LagerData.query.order_by(LagerData.id.desc()).first()
+    if not lager or not lager.rows:
+        return {
+            'nadjen': False,
+            'stanje': None,
+            'stanje_broj': None,
+            'naziv': None,
+            'ladica': None
         }
 
-        * { box-sizing: border-box; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
-        
-        body { 
-            background: linear-gradient(135deg, #0f172a 0%, #1e293b 50%, #090d16 100%);
-            margin: 0; 
-            padding: 10px; 
-            color: #f8fafc; 
-            min-height: 100vh;
-        }
-        
-        .app-wrapper { 
-            max-width: 100%; 
-            width: 100%;
-            margin: 0 auto; 
-            display: flex; 
-            flex-direction: column; 
-            gap: 15px; 
-        }
+    sifra_norm = str(sifra).strip().lower()
+    ukupno_broj = 0.0
+    imao_broj = False
+    tekstualna_stanja = []
+    ladice = []
+    naziv_nadjen = None
 
-        .top-navbar {
-            background-color: var(--secondary-bg);
-            color: white;
-            padding: 15px 20px;
-            border-radius: 10px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-            box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-        }
+    for row in lager.rows:
+        if not isinstance(row, list) or len(row) < 2:
+            continue
 
-        .nav-brand {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-        }
+        ladica_raw = str(row[0]).strip() if len(row) > 0 and row[0] is not None else ''
+        sifra_alat_val = str(row[1]).strip().lower() if len(row) > 1 and row[1] is not None else ''
+        sifra_mat_val = str(row[2]).strip().lower() if len(row) > 2 and row[2] is not None else ''
+        naziv_raw = str(row[3]).strip() if len(row) > 3 and row[3] is not None else ''
+        kolicina_raw = row[4] if len(row) > 4 else None
 
-        .nav-brand h2 { margin: 0; font-size: 18px; letter-spacing: 0.5px; color: #f8fafc; display: flex; align-items: center; gap: 10px; }
-        .nav-brand h2::before { content: ""; display: inline-block; width: 10px; height: 10px; background-color: #3b82f6; border-radius: 50%; }
+        if sifra_alat_val == sifra_norm or (sifra_mat_val and sifra_mat_val == sifra_norm):
+            if not naziv_nadjen and naziv_raw and naziv_raw != '-':
+                naziv_nadjen = naziv_raw
 
-        .user-panel { display: flex; align-items: center; gap: 12px; font-size: 14px; flex-wrap: wrap; }
-        .user-badge { background: #0f172a; padding: 5px 12px; border-radius: 20px; border: 1px solid #334155; color: #cbd5e1; }
-        .logout-btn { background-color: #ef4444; color: white; padding: 6px 14px; border-radius: 6px; text-decoration: none; font-weight: 600; font-size: 13px; transition: background 0.2s; }
-        .logout-btn:hover { background-color: #dc2626; }
+            if ladica_raw and ladica_raw != '-' and ladica_raw not in ladice:
+                ladice.append(ladica_raw)
 
-        .nav-tabs { display: flex; gap: 8px; border-top: 1px solid #334155; padding-top: 12px; flex-wrap: wrap; }
-        .tab-btn { padding: 8px 16px; background: transparent; border: 1px solid #334155; border-radius: 6px; font-weight: 600; cursor: pointer; color: #94a3b8; font-size: 13px; transition: all 0.2s; }
-        .tab-btn:hover { background: #334155; color: white; }
-        .tab-btn.active { background: var(--accent-color); color: white; border-color: var(--accent-color); }
+            broj = _parse_broj(kolicina_raw)
+            if broj is not None:
+                ukupno_broj += broj
+                imao_broj = True
+            elif kolicina_raw is not None and str(kolicina_raw).strip() not in ('', '-'):
+                tekstualna_stanja.append(str(kolicina_raw).strip())
 
-        .tab-content { display: none; }
-        .tab-content.active { display: block; width: 100%; }
-
-        .main-container {
-            width: 100%;
-            display: flex;
-            flex-direction: column;
-            gap: 15px;
+    nadjen = imao_broj or bool(tekstualna_stanja) or bool(ladice) or bool(naziv_nadjen)
+    if not nadjen:
+        return {
+            'nadjen': False,
+            'stanje': None,
+            'stanje_broj': None,
+            'naziv': None,
+            'ladica': None
         }
 
-        .controls { display: flex; flex-direction: column; gap: 12px; width: 100%; }
-        
-        .file-upload-btn { 
-            display: inline-flex; 
-            align-items: center; 
-            justify-content: center; 
-            gap: 8px;
-            background-color: var(--accent-color); 
-            color: white; 
-            padding: 12px 20px; 
-            border-radius: 8px; 
-            cursor: pointer; 
-            font-weight: 600; 
-            font-size: 14px; 
-            box-shadow: 0 4px 10px rgba(59, 130, 246, 0.3);
-            transition: background 0.2s, transform 0.1s; 
-            width: 100%;
-        }
-        .file-upload-btn:hover { background-color: var(--accent-hover); }
-        .file-upload-btn input[type="file"] { display: none; }
+    if imao_broj:
+        stanje_prikaz = int(ukupno_broj) if ukupno_broj.is_integer() else round(ukupno_broj, 4)
+        if tekstualna_stanja:
+            stanje_prikaz = f"{stanje_prikaz} ({', '.join(tekstualna_stanja)})"
+    else:
+        stanje_prikaz = ', '.join(tekstualna_stanja) if tekstualna_stanja else 0
 
-        .search-box { width: 100%; position: relative; }
-        .search-box input { 
-            width: 100%; 
-            padding: 12px 15px 12px 42px; 
-            font-size: 15px; 
-            border: 2px solid #334155; 
-            border-radius: 8px; 
-            outline: none; 
-            background: #1e293b;
-            color: white;
-            transition: all 0.2s; 
-            box-shadow: 0 4px 10px rgba(0,0,0,0.2);
-        }
-        .search-box input::placeholder { color: #94a3b8; }
-        .search-box input:focus { border-color: var(--accent-color); background: #0f172a; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2); }
-        .search-box::before {
-            content: "🔍";
-            position: absolute;
-            left: 14px;
-            top: 50%;
-            transform: translateY(-50%);
-            font-size: 14px;
-        }
-
-        .stok-toolbar {
-            background-color: var(--secondary-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 10px;
-            padding: 16px;
-            margin-bottom: 14px;
-            display: flex;
-            flex-direction: column;
-            gap: 12px;
-        }
-
-        .stok-header {
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            flex-wrap: wrap;
-            gap: 10px;
-        }
-
-        .stok-header h3 {
-            margin: 0;
-            font-size: 16px;
-            color: #f8fafc;
-        }
-
-        .stok-header small {
-            color: #94a3b8;
-        }
-
-        .stok-form {
-            display: flex;
-            flex-wrap: wrap;
-            gap: 10px;
-            align-items: center;
-        }
-
-        .stok-form input {
-            padding: 10px 12px;
-            border-radius: 6px;
-            border: 1px solid #475569;
-            background: #0f172a;
-            color: #f8fafc;
-            font-size: 14px;
-            outline: none;
-        }
-
-        .stok-form input:focus {
-            border-color: var(--accent-color);
-        }
-
-        .btn-primary-sm {
-            background-color: var(--accent-color);
-            color: white;
-            border: none;
-            padding: 10px 16px;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 13px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .btn-primary-sm:hover {
-            background-color: var(--accent-hover);
-        }
-
-        .btn-secondary-sm {
-            background-color: #334155;
-            color: #f8fafc;
-            border: 1px solid #475569;
-            padding: 8px 14px;
-            border-radius: 6px;
-            font-weight: 600;
-            font-size: 13px;
-            cursor: pointer;
-            transition: background 0.2s;
-        }
-
-        .btn-secondary-sm:hover {
-            background-color: #475569;
-        }
-
-        .status-info { font-size: 13px; color: #94a3b8; font-weight: 500; }
-        
-        .table-container { width: 100%; overflow-x: auto; border: 1px solid #334155; border-radius: 10px; max-height: 78vh; background: #ffffff; box-shadow: 0 10px 30px rgba(0,0,0,0.4); }
-        table { width: 100%; border-collapse: collapse; text-align: left; table-layout: auto; }
-        th { 
-            background-color: #1e293b; 
-            color: #f8fafc; 
-            padding: 14px 16px; 
-            font-size: 13px; 
-            font-weight: 600;
-            white-space: nowrap; 
-            position: sticky; 
-            top: 0; 
-            z-index: 10; 
-        }
-        td { padding: 12px 16px; border-bottom: 1px solid #e2e8f0; font-size: 14px; color: #334155; word-break: break-word; }
-        
-        tr:nth-child(even) { background-color: #f8fafc; }
-        tr:hover { background-color: #f1f5f9; }
-        mark { background-color: #fef08a; color: #854d0e; padding: 2px 6px; border-radius: 4px; font-weight: bold; }
-        .no-data { text-align: center; padding: 40px; color: #64748b; font-style: italic; font-size: 14px; background: white; }
-
-        .badge-approved { background: #dcfce7; color: #166534; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
-        .badge-pending { background: #fef9c3; color: #854d0e; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
-        .badge-warn { background: #fef3c7; color: #92400e; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
-        .badge-low { background: #fee2e2; color: #991b1b; padding: 4px 10px; border-radius: 20px; font-size: 12px; font-weight: 700; display: inline-block; }
-        
-        .btn-approve { background: #22c55e; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
-        .btn-approve:hover { background: #16a34a; }
-        .btn-block { background: #f59e0b; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
-        .btn-block:hover { background: #d97706; }
-        .btn-delete { background: #ef4444; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
-        .btn-delete:hover { background: #dc2626; }
-        .btn-reset { background: #3b82f6; color: white; border: none; padding: 6px 12px; border-radius: 6px; cursor: pointer; font-weight: 600; font-size: 12px; transition: background 0.2s; }
-        .btn-reset:hover { background: #2563eb; }
-
-        .action-buttons { display: flex; gap: 6px; flex-wrap: wrap; }
-
-        @media (min-width: 768px) {
-            body { padding: 15px 25px; }
-            .top-navbar { flex-direction: row; justify-content: space-between; align-items: center; padding: 18px 25px; }
-            .nav-tabs { border-top: none; padding-top: 0; }
-            .controls { flex-direction: row; align-items: center; justify-content: space-between; }
-            .file-upload-btn { width: auto; }
-            .search-box { flex: 1; }
-            .nav-brand h2 { font-size: 20px; }
-        }
-    </style>
-</head>
-<body>
-
-<div class="app-wrapper">
-    <div class="top-navbar">
-        <div class="nav-brand">
-            <h2>Magacin Alata — PK Praezision Technik</h2>
-        </div>
-        <div class="user-panel">
-            <span class="user-badge">👤 {{ current_user }}</span>
-            <a href="/logout" class="logout-btn">Odjava</a>
-        </div>
-        <div class="nav-tabs">
-            <button class="tab-btn active" onclick="switchTab('searchTab', this)">Pretraga Alata</button>
-            <button class="tab-btn" onclick="switchTab('stokTab', this); loadStokZaliha();">Stok zaliha</button>
-            {% if is_admin %}
-            <button class="tab-btn" onclick="switchTab('usersTab', this); loadUsers();">Upravljanje Korisnicima</button>
-            {% endif %}
-        </div>
-    </div>
-
-    <div class="main-container">
-        <div id="searchTab" class="tab-content active">
-            <div class="controls">
-                {% if is_admin %}
-                <label class="file-upload-btn">
-                    📁 Učitaj Novi Dokument
-                    <input type="file" id="fileInput" accept=".xlsx, .xls, .csv, .pdf">
-                </label>
-                {% else %}
-                <div></div>
-                {% endif %}
-
-                <div class="search-box">
-                    <input type="text" id="searchInput" placeholder="Pretraži šifru, naziv, materijal ili ladicu..." disabled>
-                </div>
-            </div>
-
-            <div class="status-info" id="statusInfo">Učitavam sačuvane podatke iz baze...</div>
-
-            <div class="table-container">
-                <div id="tableOutput" class="no-data">Učitavam lager...</div>
-            </div>
-        </div>
-
-        <div id="stokTab" class="tab-content">
-            <div class="stok-toolbar">
-                <div class="stok-header">
-                    <div>
-                        <h3>Stok zaliha — odabrani alati</h3>
-                        <small>Šifre koje dodaš ovdje ostaju sačuvane i povlače stanje iz glavnog lagera (0 ako ga nema na lageru).</small>
-                    </div>
-                    <button type="button" class="btn-secondary-sm" onclick="loadStokZaliha()">↻ Osvježi stanje</button>
-                </div>
-
-                {% if is_admin %}
-                <form class="stok-form" onsubmit="addStokItem(event)">
-                    <input
-                        type="text"
-                        id="stokSifra"
-                        list="lagerSifreList"
-                        placeholder="Šifra alata ili materijala"
-                        required
-                        style="min-width: 210px;"
-                    >
-                    <datalist id="lagerSifreList"></datalist>
-
-                    <input
-                        type="text"
-                        id="stokNaziv"
-                        placeholder="Naziv / opis (opcionalno)"
-                        style="min-width: 220px;"
-                    >
-
-                    <input
-                        type="number"
-                        step="any"
-                        id="stokMin"
-                        placeholder="Min. zaliha"
-                        style="width: 140px;"
-                    >
-
-                    <button type="submit" class="btn-primary-sm">+ Dodaj / Sačuvaj</button>
-                </form>
-                {% endif %}
-
-                <div style="display: flex; flex-wrap: wrap; gap: 10px; align-items: center; justify-content: space-between;">
-                    <div class="search-box" style="flex: 1; min-width: 220px;">
-                        <input
-                            type="text"
-                            id="stokSearchInput"
-                            placeholder="Filtriraj po šifri, nazivu, ladici ili stanju..."
-                            oninput="renderStokTable()"
-                        >
-                    </div>
-
-                    <div style="display: flex; gap: 6px; flex-wrap: wrap;">
-                        <button type="button" class="tab-btn active" id="stokFilterAll" onclick="setStokFilter('all', this)">Sve</button>
-                        <button type="button" class="tab-btn" id="stokFilterLow" onclick="setStokFilter('low', this)">Ispod minimuma</button>
-                        <button type="button" class="tab-btn" id="stokFilterMissing" onclick="setStokFilter('missing', this)">Stanje 0</button>
-                    </div>
-                </div>
-
-                <div class="status-info" id="stokStatusInfo">Učitavam stok zaliha...</div>
-            </div>
-
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Šifra alata</th>
-                            <th>Naziv alata</th>
-                            <th>Ladica</th>
-                            <th>Stanje u magacinu</th>
-                            <th>Min. zaliha</th>
-                            <th>Status</th>
-                            {% if is_admin %}
-                            <th>Akcije</th>
-                            {% endif %}
-                        </tr>
-                    </thead>
-                    <tbody id="stokTableBody">
-                        <tr><td colspan="{{ 7 if is_admin else 6 }}" class="no-data">Učitavam stok zaliha...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-
-        {% if is_admin %}
-        <div id="usersTab" class="tab-content">
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Korisničko Ime</th>
-                            <th>Status</th>
-                            <th>Uloga</th>
-                            <th>Akcije</th>
-                        </tr>
-                    </thead>
-                    <tbody id="usersTableBody">
-                        <tr><td colspan="4" class="no-data">Učitavam korisnike...</td></tr>
-                    </tbody>
-                </table>
-            </div>
-        </div>
-        {% endif %}
-    </div>
-</div>
-
-<script>
-    const IS_ADMIN = {{ 'true' if is_admin else 'false' }};
-    let stokItems = [];
-    let currentStokFilter = 'all';
-
-    function switchTab(tabId, btn) {
-        document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-        document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-        document.getElementById(tabId).classList.add('active');
-        btn.classList.add('active');
+    return {
+        'nadjen': True,
+        'stanje': stanje_prikaz,
+        'stanje_broj': ukupno_broj if imao_broj else 0.0,
+        'naziv': naziv_nadjen,
+        'ladica': ', '.join(ladice) if ladice else '-'
     }
 
-    pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-    let rawData = [];
-    let headers = ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
+def lista_sifri_iz_lagera():
+    """Vraća listu dostupnih šifri i naziva iz glavnog lagera za brzi odabir."""
+    lager = LagerData.query.order_by(LagerData.id.desc()).first()
+    if not lager or not lager.rows:
+        return []
 
-    const fileInput = document.getElementById('fileInput');
-    const searchInput = document.getElementById('searchInput');
-    const tableOutput = document.getElementById('tableOutput');
-    const statusInfo = document.getElementById('statusInfo');
+    stavke = []
+    vidjene = set()
 
-    window.addEventListener('DOMContentLoaded', function() {
-        loadServerData();
-    });
+    for row in lager.rows:
+        if not isinstance(row, list) or len(row) < 2:
+            continue
 
-    function loadServerData() {
-        statusInfo.textContent = "Učitavam sačuvani lager iz baze podataka...";
-        fetch('/api/data')
-            .then(res => res.json())
-            .then(data => {
-                if (data && data.rows && data.rows.length > 0) {
-                    headers = data.headers && data.headers.length > 0 ? data.headers : ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
-                    rawData = data.rows;
-                    searchInput.disabled = false;
-                    statusInfo.textContent = `Aktivni lager: "${data.filename}" — Ukupno zapisa: ${rawData.length}`;
-                    renderTable(rawData);
-                } else {
-                    statusInfo.textContent = "U bazi nema sačuvanog lagera. Učitajte novi Excel ili PDF.";
-                    tableOutput.innerHTML = '<div class="no-data">Baza je prazna. Učitajte dokument sa računara.</div>';
-                }
+        naziv = str(row[3]).strip() if len(row) > 3 and row[3] is not None and str(row[3]).strip() != '-' else ''
+        for idx in (1, 2):
+            if len(row) > idx and row[idx] is not None:
+                s = str(row[idx]).strip()
+                if s and s != '-' and s.lower() not in vidjene:
+                    vidjene.add(s.lower())
+                    stavke.append({'sifra': s, 'naziv': naziv})
+
+    return stavke
+
+
+@app.route('/')
+def index():
+    if 'user' in session:
+        return redirect(url_for('admin_panel'))
+    return redirect(url_for('login'))
+
+
+@app.route('/login', methods=['GET', 'POST'])
+def login():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        user = User.query.filter_by(username=username).first()
+        if user and check_password_hash(user.password_hash, password):
+            if not user.approved:
+                return render_template('login.html', error='Vaš račun čeka odobrenje administratora.')
+
+            session['user'] = user.username
+            session['is_admin'] = user.is_admin
+            return redirect(url_for('admin_panel'))
+
+        return render_template('login.html', error='Pogrešno korisničko ime ili šifra.')
+    return render_template('login.html')
+
+
+@app.route('/register', methods=['GET', 'POST'])
+def register():
+    if request.method == 'POST':
+        username = request.form.get('username')
+        password = request.form.get('password')
+
+        existing_user = User.query.filter_by(username=username).first()
+        if existing_user:
+            return render_template('register.html', error='Korisničko ime već postoji.')
+
+        hashed_pw = generate_password_hash(password)
+        new_user = User(username=username, password_hash=hashed_pw, approved=False, is_admin=False)
+        db.session.add(new_user)
+        db.session.commit()
+
+        return render_template('login.html', success='Uspješna registracija! Pričekajte da administrator odobri račun.')
+    return render_template('register.html')
+
+
+@app.route('/admin')
+def admin_panel():
+    if 'user' not in session:
+        return redirect(url_for('login'))
+    return render_template('admin.html', current_user=session['user'], is_admin=session.get('is_admin', False))
+
+
+@app.route('/logout')
+def logout():
+    session.clear()
+    return redirect(url_for('login'))
+
+
+# API za dohvat i spremanje podataka lagera
+@app.route('/api/data', methods=['GET', 'POST'])
+def handle_data():
+    if 'user' not in session:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    if request.method == 'POST':
+        if not session.get('is_admin'):
+            return jsonify({'success': False, 'error': 'Samo administrator može mijenjati podatke.'}), 403
+
+        req_data = request.json or {}
+        # Ažurira samo glavni lager (LagerData); StokAlata ostaje netaknut
+        LagerData.query.delete()
+
+        new_lager = LagerData(
+            filename=req_data.get('filename'),
+            headers=req_data.get('headers'),
+            rows=req_data.get('rows')
+        )
+        db.session.add(new_lager)
+        db.session.commit()
+        return jsonify({'success': True})
+
+    else:
+        lager = LagerData.query.order_by(LagerData.id.desc()).first()
+        if lager:
+            return jsonify({
+                'filename': lager.filename,
+                'headers': lager.headers,
+                'rows': lager.rows
             })
-            .catch(err => {
-                statusInfo.textContent = "Greška pri dohvaćanju lagera iz baze.";
-            });
-    }
+        return jsonify({'rows': []})
 
-    function saveServerData(filename, currentHeaders, rows) {
-        statusInfo.textContent = "Spremam lager u bazu podataka...";
-        fetch('/api/data', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                filename: filename,
-                headers: currentHeaders,
-                rows: rows
+
+# API za upravljanje "Stok zaliha" (odabrani alati + stanje povučeno iz magacina)
+@app.route('/api/stok', methods=['GET', 'POST'])
+def handle_stok():
+    if 'user' not in session:
+        return jsonify({'error': 'Unauthorized'}), 403
+
+    if request.method == 'POST':
+        if not session.get('is_admin'):
+            return jsonify({'success': False, 'error': 'Samo administrator može mijenjati stok zaliha.'}), 403
+
+        try:
+            db.create_all()
+            data = request.get_json(silent=True) or {}
+            sifra = str(data.get('sifra', '')).strip()
+            naziv = str(data.get('naziv', '')).strip()
+            min_zaliha_raw = data.get('min_zaliha', 0)
+
+            try:
+                if min_zaliha_raw is None or str(min_zaliha_raw).strip() == '':
+                    min_zaliha = 0.0
+                else:
+                    min_zaliha = float(str(min_zaliha_raw).replace(',', '.'))
+            except (ValueError, TypeError):
+                min_zaliha = 0.0
+
+            if not sifra:
+                return jsonify({'success': False, 'error': 'Unesi šifru alata.'}), 400
+
+            postojeci = StokAlata.query.filter(db.func.lower(StokAlata.sifra) == sifra.lower()).first()
+            if postojeći:
+                if naziv:
+                    postojeći.naziv = naziv[:250]
+                postojeći.min_zaliha = min_zaliha
+                db.session.commit()
+                return jsonify({'success': True, 'updated': True, 'id': postojeći.id})
+
+            info_lager = pronadji_stanje_u_lageru(sifra)
+            naziv_lager = info_lager.get('naziv') or ''
+            final_naziv = (naziv or str(naziv_lager).strip())[:250]
+
+            novi = StokAlata(sifra=sifra[:120], naziv=final_naziv, min_zaliha=min_zaliha)
+            db.session.add(novi)
+            db.session.commit()
+            return jsonify({'success': True, 'created': True, 'id': novi.id})
+
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'success': False, 'error': f'Greška na serveru: {str(e)}'}), 500
+
+    # GET: vrati sve alate iz stoka sa sabranim stanjem iz magacina (0 ako ga nema u lageru)
+    try:
+        db.create_all()
+        stavke = StokAlata.query.order_by(StokAlata.id.asc()).all()
+        rezultat = []
+        for s in stavke:
+            info = pronadji_stanje_u_lageru(s.sifra)
+            stanje_num = info['stanje_broj'] if info['nadjen'] and info['stanje_broj'] is not None else 0.0
+            stanje_prikaz = info['stanje'] if info['nadjen'] and info['stanje'] is not None else 0
+
+            ispod_minimuma = False
+            if s.min_zaliha is not None and s.min_zaliha > 0:
+                ispod_minimuma = stanje_num <= s.min_zaliha
+
+            rezultat.append({
+                'id': s.id,
+                'sifra': s.sifra,
+                'naziv': s.naziv or (info['naziv'] or ''),
+                'ladica': info['ladica'] if (info['nadjen'] and info['ladica']) else '-',
+                'min_zaliha': s.min_zaliha,
+                'stanje_magacin': stanje_prikaz,
+                'nadjen_u_lageru': info['nadjen'],
+                'ispod_minimuma': ispod_minimuma
             })
+
+        return jsonify({
+            'stavke': rezultat,
+            'sifre_iz_lagera': lista_sifri_iz_lagera()
         })
-        .then(res => res.json())
-        .then(res => {
-            if (res.success) {
-                statusInfo.textContent = `Lager "${filename}" (${rows.length} zapisa) uspješno spremljen i sinkroniziran!`;
-                if (document.getElementById('stokTab').classList.contains('active')) {
-                    loadStokZaliha();
-                }
-            } else {
-                statusInfo.textContent = "Greška pri spremanju u bazu: " + (res.error || "");
-            }
-        })
-        .catch(err => {
-            statusInfo.textContent = "Mrežna greška pri spremanju u bazu.";
-        });
-    }
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Greška na serveru: {str(e)}'}), 500
 
-    if (fileInput) {
-        fileInput.addEventListener('change', function (e) {
-            const file = e.target.files[0];
-            if (!file) return;
 
-            statusInfo.textContent = `Obrađujem dokument: "${file.name}"...`;
+@app.route('/api/stok/<int:item_id>', methods=['DELETE'])
+def delete_stok_item(item_id):
+    if 'user' not in session or not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
 
-            if (file.name.toLowerCase().endsWith('.pdf')) {
-                processPDF(file);
-            } else {
-                processExcelOrCSV(file);
-            }
-        });
-    }
+    try:
+        stavka = StokAlata.query.get(item_id)
+        if not stavka:
+            return jsonify({'success': False, 'error': 'Stavka nije pronađena.'}), 404
 
-    function processExcelOrCSV(file) {
-        const reader = new FileReader();
-        reader.onload = function (event) {
-            const data = new Uint8Array(event.target.result);
-            const workbook = XLSX.read(data, { type: 'array' });
-            const firstSheetName = workbook.SheetNames[0];
-            const worksheet = workbook.Sheets[firstSheetName];
-            const jsonData = XLSX.utils.sheet_to_json(worksheet, { header: 1 });
+        db.session.delete(stavka)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': f'Greška na serveru: {str(e)}'}), 500
 
-            if (jsonData.length > 0) {
-                headers = ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
-                
-                rawData = jsonData.slice(1).filter(row => row.length >= 2).map(row => {
-                    return [
-                        row[0] !== undefined ? row[0] : "-",
-                        row[1] !== undefined ? row[1] : "-",
-                        row[2] !== undefined ? row[2] : "-",
-                        row[3] !== undefined ? row[3] : "-",
-                        row[4] !== undefined ? row[4] : "-"
-                    ];
-                });
 
-                searchInput.disabled = false;
-                searchInput.value = '';
-                renderTable(rawData);
-                saveServerData(file.name, headers, rawData);
-            } else {
-                tableOutput.innerHTML = '<div class="no-data">Dokument je prazan.</div>';
-            }
-        };
-        reader.readAsArrayBuffer(file);
-    }
+# API za upravljanje korisnicima (samo admin)
+@app.route('/api/users', methods=['GET'])
+def get_users():
+    if 'user' not in session or not session.get('is_admin'):
+        return jsonify({'error': 'Unauthorized'}), 403
 
-    function processPDF(file) {
-        const reader = new FileReader();
-        reader.onload = function (event) {
-            const typedarray = new Uint8Array(event.target.result);
+    users = User.query.all()
+    users_list = [{
+        'username': u.username,
+        'approved': u.approved,
+        'is_admin': u.is_admin
+    } for u in users]
 
-            pdfjsLib.getDocument(typedarray).promise.then(async function (pdf) {
-                headers = ["Ladica", "Šifra alata", "Šifra materijala", "Naziv alata", "Količina"];
-                rawData = [];
+    return jsonify(users_list)
 
-                for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-                    const page = await pdf.getPage(pageNum);
-                    const textContent = await page.getTextContent();
-                    const viewport = page.getViewport({ scale: 1.0 });
-                    const pageWidth = viewport.width;
 
-                    let rowsMap = {};
+@app.route('/api/users/toggle', methods=['POST'])
+def toggle_user():
+    if 'user' not in session or not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
 
-                    textContent.items.forEach(item => {
-                        let str = item.str.trim();
-                        if (!str) return;
+    data = request.json or {}
+    username = data.get('username')
+    user = User.query.filter_by(username=username).first()
 
-                        let rawY = Math.round(item.transform[5]);
-                        let foundY = Object.keys(rowsMap).find(y => Math.abs(parseInt(y) - rawY) < 5);
-                        let targetY = foundY ? foundY : rawY;
+    if user:
+        if user.is_admin:
+            return jsonify({'success': False, 'error': 'Ne možeš mijenjati status administratora!'}), 400
+        user.approved = not user.approved
+        db.session.commit()
+        return jsonify({'success': True})
 
-                        if (!rowsMap[targetY]) rowsMap[targetY] = [];
-                        rowsMap[targetY].push({ text: str, x: item.transform[4] });
-                    });
+    return jsonify({'success': False, 'error': 'Korisnik nije pronađen.'}), 404
 
-                    let sortedY = Object.keys(rowsMap).sort((a, b) => parseInt(b) - parseInt(a));
 
-                    sortedY.forEach(y => {
-                        let items = rowsMap[y].sort((a, b) => a.x - b.x);
-                        let fullLineText = items.map(it => it.text).join(' ');
+@app.route('/api/users/delete', methods=['POST'])
+def delete_user():
+    if 'user' not in session or not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
 
-                        if (/STANJE IZLAZNOG|PK Praezision|Datum ispisa|Mirzad Mutapcic|Ladica\s+Sifra|Sifra materijala|Naziv alata\s+Kolicina|Strana\s+\d+|info@pk|www\.pk|Bosna i Hercegovina|Gradacac/i.test(fullLineText)) {
-                            return;
-                        }
+    data = request.json or {}
+    username = data.get('username')
 
-                        let colLadica = [];
-                        let colSifraAlata = [];
-                        let colSifraMat = [];
-                        let colNazivAlata = [];
-                        let colKolicina = [];
+    if username == session.get('user'):
+        return jsonify({'success': False, 'error': 'Ne možeš obrisati vlastiti administrator račun!'}), 400
 
-                        items.forEach(it => {
-                            let relX = it.x / pageWidth;
+    user = User.query.filter_by(username=username).first()
+    if user:
+        db.session.delete(user)
+        db.session.commit()
+        return jsonify({'success': True})
 
-                            if (relX < 0.12) {
-                                colLadica.push(it.text);
-                            } else if (relX >= 0.12 && relX < 0.38) {
-                                colSifraAlata.push(it.text);
-                            } else if (relX >= 0.38 && relX < 0.62) {
-                                colSifraMat.push(it.text);
-                            } else if (relX >= 0.62 && relX < 0.88) {
-                                colNazivAlata.push(it.text);
-                            } else {
-                                colKolicina.push(it.text);
-                            }
-                        });
+    return jsonify({'success': False, 'error': 'Korisnik nije pronađen.'}), 404
 
-                        let ladicaStr = colLadica.join(' ').trim();
-                        let sifraAlataStr = colSifraAlata.join(' ').trim();
-                        let sifraMatStr = colSifraMat.join(' ').trim();
-                        let nazivAlataStr = colNazivAlata.join(' ').trim();
-                        let kolicinaStr = colKolicina.join(' ').trim();
 
-                        if (/^O-OP-/i.test(sifraAlataStr) && !sifraMatStr) {
-                            sifraMatStr = sifraAlataStr;
-                            sifraAlataStr = "";
-                        }
+@app.route('/api/users/reset-password', methods=['POST'])
+def reset_password():
+    if 'user' not in session or not session.get('is_admin'):
+        return jsonify({'success': False, 'error': 'Unauthorized'}), 403
 
-                        if (ladicaStr || sifraAlataStr || sifraMatStr || nazivAlataStr) {
-                            rawData.push([
-                                ladicaStr || "-",
-                                sifraAlataStr || "-",
-                                sifraMatStr || "-",
-                                nazivAlataStr || "-",
-                                kolicinaStr || "-"
-                            ]);
-                        }
-                    });
-                }
+    data = request.json or {}
+    username = data.get('username')
+    new_password = data.get('new_password')
 
-                if (rawData.length > 0) {
-                    searchInput.disabled = false;
-                    searchInput.value = '';
-                    renderTable(rawData);
-                    saveServerData(file.name, headers, rawData);
-                } else {
-                    tableOutput.innerHTML = '<div class="no-data">Nije moguće automatski izdvojiti stavke iz ovog PDF-a.</div>';
-                }
-            }).catch(function (error) {
-                statusInfo.textContent = "Greška pri otvaranju PDF dokumenta.";
-                tableOutput.innerHTML = '<div class="no-data">Greška pri čitanju PDF-a.</div>';
-            });
-        };
-        reader.readAsArrayBuffer(file);
-    }
+    if not new_password:
+        return jsonify({'success': False, 'error': 'Nova šifra ne može biti prazna.'}), 400
 
-    if (searchInput) {
-        searchInput.addEventListener('input', function () {
-            const query = this.value.trim().toLowerCase();
+    user = User.query.filter_by(username=username).first()
+    if user:
+        user.password_hash = generate_password_hash(new_password)
+        db.session.commit()
+        return jsonify({'success': True})
 
-            if (!query) {
-                renderTable(rawData);
-                statusInfo.textContent = `Ukupno zapisa: ${rawData.length}`;
-                return;
-            }
+    return jsonify({'success': False, 'error': 'Korisnik nije pronađen.'}), 404
 
-            const filteredData = rawData.filter(row => {
-                return row.some(cell => {
-                    return cell !== null && cell !== undefined && cell.toString().toLowerCase().includes(query);
-                });
-            });
 
-            statusInfo.textContent = `Pronađeno zapisa: ${filteredData.length} od ukupno ${rawData.length}`;
-            renderTable(filteredData, query);
-        });
-    }
+# Ruta za sprečavanje uspavljivanja poslužitelja na Renderu
+@app.route('/ping')
+def ping():
+    return jsonify({'status': 'active'}), 200
 
-    function renderTable(data, highlightQuery = '') {
-        if (data.length === 0) {
-            tableOutput.innerHTML = '<div class="no-data">Nema rezultata koji odgovaraju pretrazi.</div>';
-            return;
-        }
 
-        let html = '<table><thead><tr>';
-        headers.forEach(header => {
-            html += `<th>${header !== undefined ? header : ''}</th>`;
-        });
-        html += '</tr></thead><tbody>';
-
-        data.forEach(row => {
-            html += '<tr>';
-            for (let i = 0; i < headers.length; i++) {
-                let cellValue = row[i] !== undefined && row[i] !== null ? row[i].toString() : '';
-                
-                if (highlightQuery && cellValue.toLowerCase().includes(highlightQuery)) {
-                    const regex = new RegExp(`(${escapeRegExp(highlightQuery)})`, 'gi');
-                    cellValue = cellValue.replace(regex, '<mark>$1</mark>');
-                }
-
-                html += `<td>${cellValue}</td>`;
-            }
-            html += '</tr>';
-        });
-
-        html += '</tbody></table>';
-        tableOutput.innerHTML = html;
-    }
-
-    function escapeRegExp(string) {
-        return string.replace(/[.*+?^${}()|[\]\tabs]/g, '\\$&');
-    }
-
-    function escapeHtml(str) {
-        return String(str ?? '')
-            .replace(/&/g, '&amp;')
-            .replace(/</g, '&lt;')
-            .replace(/>/g, '&gt;')
-            .replace(/"/g, '&quot;');
-    }
-
-    function setStokFilter(filterName, btnEl) {
-        currentStokFilter = filterName;
-        ['stokFilterAll', 'stokFilterLow', 'stokFilterMissing'].forEach(id => {
-            const b = document.getElementById(id);
-            if (b) b.classList.remove('active');
-        });
-        if (btnEl) btnEl.classList.add('active');
-        renderStokTable();
-    }
-
-    function loadStokZaliha() {
-        const tbody = document.getElementById('stokTableBody');
-        const datalist = document.getElementById('lagerSifreList');
-        const stokStatus = document.getElementById('stokStatusInfo');
-        const kolonaBroj = IS_ADMIN ? 7 : 6;
-        if (!tbody) return;
-
-        if (stokStatus) {
-            stokStatus.textContent = "Učitavam stok zaliha i stanje iz glavnog lagera...";
-        }
-
-        fetch('/api/stok')
-            .then(async res => {
-                const text = await res.text();
-                let data = {};
-                try {
-                    data = JSON.parse(text);
-                } catch (_) {
-                    throw new Error(`HTTP ${res.status}`);
-                }
-                if (!res.ok || data.error) {
-                    throw new Error(data.error || `HTTP ${res.status}`);
-                }
-                return data;
-            })
-            .then(data => {
-                if (datalist && Array.isArray(data.sifre_iz_lagera)) {
-                    datalist.innerHTML = data.sifre_iz_lagera
-                        .map(item => `<option value="${escapeHtml(item.sifra)}">${escapeHtml(item.naziv)}</option>`)
-                        .join('');
-                }
-
-                stokItems = data.stavke || [];
-                renderStokTable();
-            })
-            .catch(err => {
-                if (stokStatus) {
-                    stokStatus.textContent = "Greška pri učitavanju stoka zaliha: " + err.message;
-                }
-                tbody.innerHTML = `<tr><td colspan="${kolonaBroj}" class="no-data">Greška pri učitavanju stoka zaliha.</td></tr>`;
-            });
-    }
-
-    function renderStokTable() {
-        const tbody = document.getElementById('stokTableBody');
-        const stokStatus = document.getElementById('stokStatusInfo');
-        const searchEl = document.getElementById('stokSearchInput');
-        const kolonaBroj = IS_ADMIN ? 7 : 6;
-        if (!tbody) return;
-
-        const query = (searchEl ? searchEl.value : '').trim().toLowerCase();
-
-        const filtered = stokItems.filter(s => {
-            const stanjeNula = !s.nadjen_u_lageru || Number(s.stanje_magacin) === 0;
-            if (currentStokFilter === 'low' && !s.ispod_minimuma) return false;
-            if (currentStokFilter === 'missing' && !stanjeNula) return false;
-
-            if (!query) return true;
-            const hay = [
-                s.sifra,
-                s.naziv,
-                s.ladica,
-                s.stanje_magacin
-            ].map(v => String(v ?? '').toLowerCase()).join(' ');
-
-            return hay.includes(query);
-        });
-
-        if (stokStatus) {
-            stokStatus.textContent = `Prikazano stavki: ${filtered.length} od ukupno ${stokItems.length}`;
-        }
-
-        if (filtered.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="${kolonaBroj}" class="no-data">Nema stavki koje odgovaraju filteru ili pretrazi.</td></tr>`;
-            return;
-        }
-
-        tbody.innerHTML = filtered.map(s => {
-            const stanjeVal = s.stanje_magacin ?? 0;
-            let badgeHtml = '<span class="badge-approved">OK</span>';
-            let rowBg = '';
-
-            if (s.ispod_minimuma) {
-                badgeHtml = '<span class="badge-low">Ispod minimuma</span>';
-                rowBg = 'background-color: #fef2f2;';
-            } else if (!s.nadjen_u_lageru || Number(stanjeVal) === 0) {
-                badgeHtml = '<span class="badge-warn">Stanje 0</span>';
-                rowBg = 'background-color: #fffbeb;';
-            }
-
-            const minCell = IS_ADMIN
-                ? `<td style="cursor: pointer;" title="Klikni za brzu izmjenu minimalne zalihe" onclick="editStokMin(${s.id})"><strong>${escapeHtml(s.min_zaliha ?? 0)}</strong> ✏️</td>`
-                : `<td>${escapeHtml(s.min_zaliha ?? 0)}</td>`;
-
-            const akcijeCell = IS_ADMIN
-                ? `<td><div class="action-buttons"><button type="button" class="btn-reset" onclick="editStokMin(${s.id})">Min. zaliha</button><button type="button" class="btn-delete" onclick="deleteStokItem(${s.id})">Obriši</button></div></td>`
-                : '';
-
-            return `
-                <tr style="${rowBg}">
-                    <td><strong>${escapeHtml(s.sifra)}</strong></td>
-                    <td>${escapeHtml(s.naziv || '-')}</td>
-                    <td>${escapeHtml(s.ladica || '-')}</td>
-                    <td><strong>${escapeHtml(stanjeVal)}</strong></td>
-                    ${minCell}
-                    <td>${badgeHtml}</td>
-                    ${akcijeCell}
-                </tr>
-            `;
-        }).join('');
-    }
-
-    function addStokItem(event) {
-        event.preventDefault();
-        const sifraInput = document.getElementById('stokSifra');
-        const nazivInput = document.getElementById('stokNaziv');
-        const minInput = document.getElementById('stokMin');
-        const stokStatus = document.getElementById('stokStatusInfo');
-
-        const payload = {
-            sifra: sifraInput.value.trim(),
-            naziv: nazivInput.value.trim(),
-            min_zaliha: minInput.value.trim()
-        };
-
-        if (!payload.sifra) return;
-
-        fetch('/api/stok', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify(payload)
-        })
-        .then(async res => {
-            const text = await res.text();
-            let data = {};
-            try {
-                data = JSON.parse(text);
-            } catch (_) {
-                throw new Error(`HTTP ${res.status}`);
-            }
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || `HTTP ${res.status}`);
-            }
-            return data;
-        })
-        .then(data => {
-            sifraInput.value = '';
-            nazivInput.value = '';
-            minInput.value = '';
-            if (stokStatus) {
-                stokStatus.textContent = data.updated
-                    ? "Stavka u stoku zaliha je ažurirana."
-                    : "Alat je dodat u stok zaliha.";
-            }
-            loadStokZaliha();
-        })
-        .catch(err => {
-            alert('Greška pri spremanju u stok zaliha: ' + err.message);
-        });
-    }
-
-    function editStokMin(itemId) {
-        const item = stokItems.find(s => s.id === itemId);
-        if (!item) return;
-
-        const novaMin = prompt(
-            `Nova minimalna zaliha za alat "${item.sifra}" (${item.naziv || 'bez naziva'}):`,
-            item.min_zaliha ?? 0
-        );
-
-        if (novaMin === null) return;
-
-        const trimmed = novaMin.trim().replace(',', '.');
-        if (trimmed === '' || isNaN(Number(trimmed))) {
-            alert('Unesi ispravan broj za minimalnu zalihu.');
-            return;
-        }
-
-        const stokStatus = document.getElementById('stokStatusInfo');
-        if (stokStatus) {
-            stokStatus.textContent = `Ažuriram minimalnu zalihu za ${item.sifra}...`;
-        }
-
-        fetch('/api/stok', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                sifra: item.sifra,
-                naziv: item.naziv || '',
-                min_zaliha: Number(trimmed)
-            })
-        })
-        .then(async res => {
-            const text = await res.text();
-            let data = {};
-            try {
-                data = JSON.parse(text);
-            } catch (_) {
-                throw new Error(`HTTP ${res.status}`);
-            }
-            if (!res.ok || !data.success) {
-                throw new Error(data.error || `HTTP ${res.status}`);
-            }
-            return data;
-        })
-        .then(() => {
-            if (stokStatus) {
-                stokStatus.textContent = `Minimalna zaliha za ${item.sifra} postavljena na ${Number(trimmed)}.`;
-            }
-            loadStokZaliha();
-        })
-        .catch(err => {
-            alert('Greška pri ažuriranju minimalne zalihe: ' + err.message);
-        });
-    }
-
-    function deleteStokItem(itemId) {
-        if (!confirm('Ukloniti ovaj alat iz stoka zaliha?')) return;
-
-        fetch(`/api/stok/${itemId}`, { method: 'DELETE' })
-            .then(async res => {
-                const text = await res.text();
-                let data = {};
-                try {
-                    data = JSON.parse(text);
-                } catch (_) {
-                    throw new Error(`HTTP ${res.status}`);
-                }
-                if (!res.ok || !data.success) {
-                    throw new Error(data.error || `HTTP ${res.status}`);
-                }
-                return data;
-            })
-            .then(() => {
-                loadStokZaliha();
-            })
-            .catch(err => {
-                alert('Greška pri brisanju stavke: ' + err.message);
-            });
-    }
-
-    function loadUsers() {
-        fetch('/api/users')
-            .then(res => res.json())
-            .then(data => {
-                const tbody = document.getElementById('usersTableBody');
-                if (!tbody) return;
-                tbody.innerHTML = '';
-
-                data.forEach(u => {
-                    let statusBadge = u.approved ? '<span class="badge-approved">Odobren</span>' : '<span class="badge-pending">Na čekanju</span>';
-                    let roleStr = u.is_admin ? 'Administrator' : 'Korisnik';
-                    let actionBtns = '';
-
-                    if (!u.is_admin) {
-                        let toggleBtn = u.approved 
-                            ? `<button class="btn-block" onclick="toggleUser('${u.username}')">Blokiraj</button>` 
-                            : `<button class="btn-approve" onclick="toggleUser('${u.username}')">Odobri</button>`;
-                        
-                        let resetBtn = `<button class="btn-reset" onclick="resetUserPassword('${u.username}')">Reset Šifre</button>`;
-                        let deleteBtn = `<button class="btn-delete" onclick="deleteUser('${u.username}')">Obriši</button>`;
-                        
-                        actionBtns = `<div class="action-buttons">${toggleBtn}${resetBtn}${deleteBtn}</div>`;
-                    } else {
-                        actionBtns = '<em>Glavni Admin</em>';
-                    }
-
-                    tbody.innerHTML += `
-                        <tr>
-                            <td><strong>${u.username}</strong></td>
-                            <td>${statusBadge}</td>
-                            <td>${roleStr}</td>
-                            <td>${actionBtns}</td>
-                        </tr>
-                    `;
-                });
-            });
-    }
-
-    function toggleUser(username) {
-        fetch('/api/users/toggle', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: username })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                loadUsers();
-            } else {
-                alert(data.error || 'Greška pri promjeni statusa!');
-            }
-        });
-    }
-
-    function deleteUser(username) {
-        if (!confirm(`Jesi li siguran da želiš trajno obrisati korisnika: ${username}?`)) return;
-        
-        fetch('/api/users/delete', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: username })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                loadUsers();
-            } else {
-                alert(data.error || 'Greška pri brisanju korisnika.');
-            }
-        });
-    }
-
-    function resetUserPassword(username) {
-        let newPass = prompt(`Unesi novu šifru za korisnika ${username}:`);
-        if (!newPass) return;
-        
-        fetch('/api/users/reset-password', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ username: username, new_password: newPass })
-        })
-        .then(res => res.json())
-        .then(data => {
-            if (data.success) {
-                alert('Šifra je uspješno promijenjena!');
-            } else {
-                alert(data.error || 'Greška pri promjeni šifre.');
-            }
-        });
-    }
-
-    setInterval(function() {
-        fetch('/ping')
-            .then(res => res.json())
-            .then(data => {
-                console.log("Server je budan i aktivan.");
-            })
-            .catch(err => console.log("Ping greška:", err));
-    }, 5 * 60 * 1000);
-</script>
-
-</body>
-</html>
+if __name__ == '__main__':
+    app.run(host='0.0.0.0', port=5000)
