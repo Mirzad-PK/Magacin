@@ -44,7 +44,6 @@ class StokAlata(db.Model):
 
 with app.app_context():
     db.create_all()
-    # Automatski kreiraj admina ako ne postoji
     admin_user = User.query.filter_by(username='mirzad').first()
     if not admin_user:
         hashed_pw = generate_password_hash('admin123')
@@ -263,62 +262,77 @@ def handle_stok():
         if not session.get('is_admin'):
             return jsonify({'success': False, 'error': 'Samo administrator može mijenjati stok zaliha.'}), 403
 
-        data = request.json or {}
-        sifra = str(data.get('sifra', '')).strip()
-        naziv = str(data.get('naziv', '')).strip()
-        min_zaliha_raw = data.get('min_zaliha', 0)
-
         try:
-            min_zaliha = float(str(min_zaliha_raw).replace(',', '.')) if str(min_zaliha_raw).strip() != '' else 0.0
-        except ValueError:
-            min_zaliha = 0.0
+            db.create_all()
+            data = request.get_json(silent=True) or {}
+            sifra = str(data.get('sifra', '')).strip()
+            naziv = str(data.get('naziv', '')).strip()
+            min_zaliha_raw = data.get('min_zaliha', 0)
 
-        if not sifra:
-            return jsonify({'success': False, 'error': 'Unesi šifru alata.'}), 400
+            try:
+                if min_zaliha_raw is None or str(min_zaliha_raw).strip() == '':
+                    min_zaliha = 0.0
+                else:
+                    min_zaliha = float(str(min_zaliha_raw).replace(',', '.'))
+            except (ValueError, TypeError):
+                min_zaliha = 0.0
 
-        postojeci = StokAlata.query.filter(db.func.lower(StokAlata.sifra) == sifra.lower()).first()
-        if postojeći:
-            if naziv:
-                postojeći.naziv = naziv
-            postojeći.min_zaliha = min_zaliha
+            if not sifra:
+                return jsonify({'success': False, 'error': 'Unesi šifru alata.'}), 400
+
+            postojeci = StokAlata.query.filter(db.func.lower(StokAlata.sifra) == sifra.lower()).first()
+            if postojeći:
+                if naziv:
+                    postojeći.naziv = naziv[:250]
+                postojeći.min_zaliha = min_zaliha
+                db.session.commit()
+                return jsonify({'success': True, 'updated': True, 'id': postojeći.id})
+
+            info_lager = pronadji_stanje_u_lageru(sifra)
+            naziv_lager = info_lager.get('naziv') or ''
+            final_naziv = (naziv or str(naziv_lager).strip())[:250]
+
+            novi = StokAlata(sifra=sifra[:120], naziv=final_naziv, min_zaliha=min_zaliha)
+            db.session.add(novi)
             db.session.commit()
-            return jsonify({'success': True, 'updated': True, 'id': postojeći.id})
+            return jsonify({'success': True, 'created': True, 'id': novi.id})
 
-        info_lager = pronadji_stanje_u_lageru(sifra)
-        final_naziv = naziv or (info_lager['naziv'] or '')
-
-        novi = StokAlata(sifra=sifra, naziv=final_naziv, min_zaliha=min_zaliha)
-        db.session.add(novi)
-        db.session.commit()
-        return jsonify({'success': True, 'created': True, 'id': novi.id})
+        except Exception as e:
+            db.session.rollback()
+            return jsonify({'success': False, 'error': f'Greška na serveru: {str(e)}'}), 500
 
     # GET: vrati sve alate iz stoka sa sabranim stanjem iz magacina (0 ako ga nema u lageru)
-    stavke = StokAlata.query.order_by(StokAlata.id.asc()).all()
-    rezultat = []
-    for s in stavke:
-        info = pronadji_stanje_u_lageru(s.sifra)
-        stanje_num = info['stanje_broj'] if info['nadjen'] and info['stanje_broj'] is not None else 0.0
-        stanje_prikaz = info['stanje'] if info['nadjen'] and info['stanje'] is not None else 0
+    try:
+        db.create_all()
+        stavke = StokAlata.query.order_by(StokAlata.id.asc()).all()
+        rezultat = []
+        for s in stavke:
+            info = pronadji_stanje_u_lageru(s.sifra)
+            stanje_num = info['stanje_broj'] if info['nadjen'] and info['stanje_broj'] is not None else 0.0
+            stanje_prikaz = info['stanje'] if info['nadjen'] and info['stanje'] is not None else 0
 
-        ispod_minimuma = False
-        if s.min_zaliha is not None and s.min_zaliha > 0:
-            ispod_minimuma = stanje_num <= s.min_zaliha
+            ispod_minimuma = False
+            if s.min_zaliha is not None and s.min_zaliha > 0:
+                ispod_minimuma = stanje_num <= s.min_zaliha
 
-        rezultat.append({
-            'id': s.id,
-            'sifra': s.sifra,
-            'naziv': s.naziv or (info['naziv'] or ''),
-            'ladica': info['ladica'] if (info['nadjen'] and info['ladica']) else '-',
-            'min_zaliha': s.min_zaliha,
-            'stanje_magacin': stanje_prikaz,
-            'nadjen_u_lageru': info['nadjen'],
-            'ispod_minimuma': ispod_minimuma
+            rezultat.append({
+                'id': s.id,
+                'sifra': s.sifra,
+                'naziv': s.naziv or (info['naziv'] or ''),
+                'ladica': info['ladica'] if (info['nadjen'] and info['ladica']) else '-',
+                'min_zaliha': s.min_zaliha,
+                'stanje_magacin': stanje_prikaz,
+                'nadjen_u_lageru': info['nadjen'],
+                'ispod_minimuma': ispod_minimuma
+            })
+
+        return jsonify({
+            'stavke': rezultat,
+            'sifre_iz_lagera': lista_sifri_iz_lagera()
         })
-
-    return jsonify({
-        'stavke': rezultat,
-        'sifre_iz_lagera': lista_sifri_iz_lagera()
-    })
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'error': f'Greška na serveru: {str(e)}'}), 500
 
 
 @app.route('/api/stok/<int:item_id>', methods=['DELETE'])
@@ -326,13 +340,17 @@ def delete_stok_item(item_id):
     if 'user' not in session or not session.get('is_admin'):
         return jsonify({'success': False, 'error': 'Unauthorized'}), 403
 
-    stavka = StokAlata.query.get(item_id)
-    if not stavka:
-        return jsonify({'success': False, 'error': 'Stavka nije pronađena.'}), 404
+    try:
+        stavka = StokAlata.query.get(item_id)
+        if not stavka:
+            return jsonify({'success': False, 'error': 'Stavka nije pronađena.'}), 404
 
-    db.session.delete(stavka)
-    db.session.commit()
-    return jsonify({'success': True})
+        db.session.delete(stavka)
+        db.session.commit()
+        return jsonify({'success': True})
+    except Exception as e:
+        db.session.rollback()
+        return jsonify({'success': False, 'error': f'Greška na serveru: {str(e)}'}), 500
 
 
 # API za upravljanje korisnicima (samo admin)
